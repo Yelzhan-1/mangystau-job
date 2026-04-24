@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User.role: "CANDIDATE" | "EMPLOYER" | "ADMIN"
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  phone     String?
+  role      String   @default("CANDIDATE")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  candidateProfile CandidateProfile?
+  employerProfile  EmployerProfile?
+  telegramLink     TelegramLink?
+}
+
+// experienceLevel: "NO_EXPERIENCE" | "JUNIOR" | "MIDDLE" | "SENIOR"
+// preferredType:   "FULL_TIME" | "PART_TIME" | "INTERNSHIP" | "CONTRACT" | "SEASONAL"
+model CandidateProfile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio             String?
+  city            String   @default("Актау")
+  district        String?
+  skills          String   // JSON array string
+  experienceLevel String   @default("NO_EXPERIENCE")
+  preferredType   String   @default("FULL_TIME")
+  sector          String?
+  resumeUrl       String?
+  isAvailable     Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  applications Application[]
+}
+
+model EmployerProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName  String
+  businessType String
+  city         String   @default("Актау")
+  district     String?
+  contactPhone String?
+  description  String?
+  logoUrl      String?
+  isVerified   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  jobs Job[]
+}
+
+// employmentType:  "FULL_TIME" | "PART_TIME" | "INTERNSHIP" | "CONTRACT" | "SEASONAL"
+// experienceLevel: "NO_EXPERIENCE" | "JUNIOR" | "MIDDLE" | "SENIOR"
+model Job {
+  id              String   @id @default(cuid())
+  title           String
+  description     String
+  sector          String
+  experienceLevel String   @default("NO_EXPERIENCE")
+  employmentType  String   @default("FULL_TIME")
+  city            String   @default("Актау")
+  district        String?
+  salaryMin       Int?
+  salaryMax       Int?
+  skills          String   // JSON array string
+  isActive        Boolean  @default(true)
+  employerId      String
+  employer        EmployerProfile @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  applications Application[]
+}
+
+// status: "PENDING" | "VIEWED" | "SHORTLISTED" | "REJECTED" | "HIRED"
+model Application {
+  id          String   @id @default(cuid())
+  candidateId String
+  candidate   CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  jobId       String
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  status      String   @default("PENDING")
+  coverNote   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([candidateId, jobId])
+}
+
+model TelegramLink {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatId    String   @unique
+  username  String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
