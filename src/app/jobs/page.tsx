@@ -1,96 +1,164 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type { ComponentType } from "react";
 import {
   ArrowRight,
   BriefcaseBusiness,
   CheckCircle2,
   Filter,
-  Layers,
   Loader2,
   MapPin,
   Search,
   Send,
-  SlidersHorizontal,
   Sparkles,
   X,
 } from "lucide-react";
 
-type User = {
+type Role = "candidate" | "employer" | "admin";
+
+type Session = {
   id: string;
   name: string;
   email: string;
-  phone?: string | null;
+  role: Role;
+  createdAt: string;
 };
 
 type Employer = {
   id: string;
   companyName: string;
-  businessType?: string | null;
-  city?: string | null;
-  district?: string | null;
-  user?: User;
+  userId?: string;
+  isVerified?: boolean;
 };
 
 type Job = {
   id: string;
   title: string;
-  description: string;
-  sector: string;
-  experienceLevel: string;
-  employmentType: string;
-  city: string;
-  district: string;
+  description?: string;
+  sector?: string;
+  experienceLevel?: string;
+  employmentType?: string;
+  city?: string;
+  district?: string;
   salaryMin?: number | null;
   salaryMax?: number | null;
-  skills: string;
-  createdAt?: string;
+  skills?: string | null;
   isActive?: boolean;
+  createdAt?: string;
   employer?: Employer;
   _count?: {
     applications?: number;
   };
 };
 
-type Candidate = {
+type CandidateProfile = {
   id: string;
-  userId?: string;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    phone?: string;
+  };
   city?: string;
   district?: string;
+  bio?: string;
   skills?: string;
   experienceLevel?: string;
   preferredJobType?: string;
   preferredType?: string;
-  user?: User;
+  expectedSalaryMin?: number;
+  expectedSalaryMax?: number;
 };
 
-const JobMap = dynamic(
-  () =>
-    import("@/components/map/JobMap").then((mod: any) => mod.JobMap || mod.default),
+const SESSION_KEY = "mj_session";
+const JOBS_KEY = "mj_jobs";
+const APPLICATIONS_KEY = "mj_applications";
+
+const fallbackJobs: Job[] = [
   {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-[460px] items-center justify-center rounded-[2rem] border border-slate-200 bg-white">
-        <div className="flex items-center gap-3 text-slate-500">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          Загружаем карту вакансий...
-        </div>
-      </div>
-    ),
-  }
-) as ComponentType<{ jobs: Job[]; height?: string; className?: string }>;
+    id: "fallback-job-1",
+    title: "Официант / Официантка",
+    description:
+      "Работа в кафе рядом с домом. Можно без опыта, главное — ответственность и пунктуальность.",
+    sector: "Общественное питание",
+    experienceLevel: "NO_EXPERIENCE",
+    employmentType: "PART_TIME",
+    city: "Актау",
+    district: "Микрорайон 7",
+    salaryMin: 90000,
+    salaryMax: 130000,
+    skills: "Ответственность, Коммуникабельность, Пунктуальность, Работа с клиентами",
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    employer: {
+      id: "fallback-employer-1",
+      companyName: "Кафе «Каспий»",
+      isVerified: true,
+    },
+    _count: {
+      applications: 1,
+    },
+  },
+  {
+    id: "fallback-job-2",
+    title: "Курьер-доставщик",
+    description:
+      "Доставка заказов по районам Актау. Подходит для студентов и молодых специалистов.",
+    sector: "Доставка",
+    experienceLevel: "NO_EXPERIENCE",
+    employmentType: "PART_TIME",
+    city: "Актау",
+    district: "Микрорайон 12",
+    salaryMin: 80000,
+    salaryMax: 150000,
+    skills: "Знание города, Ответственность, Пунктуальность",
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    employer: {
+      id: "fallback-employer-2",
+      companyName: "Caspian Logistics",
+      isVerified: true,
+    },
+    _count: {
+      applications: 0,
+    },
+  },
+  {
+    id: "fallback-job-3",
+    title: "Оператор склада",
+    description:
+      "Работа на складе в промзоне. Нужны внимательность и физическая выносливость.",
+    sector: "Логистика",
+    experienceLevel: "JUNIOR",
+    employmentType: "FULL_TIME",
+    city: "Актау",
+    district: "Промзона",
+    salaryMin: 120000,
+    salaryMax: 180000,
+    skills: "Физическая выносливость, Ответственность, Внимательность",
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    employer: {
+      id: "fallback-employer-3",
+      companyName: "Aktau Supply",
+      isVerified: true,
+    },
+    _count: {
+      applications: 0,
+    },
+  },
+];
 
 const sectors = [
   "Все сферы",
+  "Общественное питание",
   "Доставка",
   "Логистика",
-  "Общественное питание",
+  "Ритейл",
   "Сервис",
-  "Продажи",
   "Образование",
+  "Администрация",
 ];
 
 const districts = [
@@ -104,16 +172,15 @@ const districts = [
   "Центр",
 ];
 
-const employmentTypes = [
+const employmentOptions = [
   { value: "", label: "Любой тип" },
-  { value: "FULL_TIME", label: "Полная занятость" },
   { value: "PART_TIME", label: "Подработка" },
+  { value: "FULL_TIME", label: "Полная занятость" },
   { value: "INTERNSHIP", label: "Стажировка" },
   { value: "CONTRACT", label: "Контракт" },
-  { value: "SEASONAL", label: "Сезонная работа" },
 ];
 
-const experienceLevels = [
+const experienceOptions = [
   { value: "", label: "Любой опыт" },
   { value: "NO_EXPERIENCE", label: "Без опыта" },
   { value: "JUNIOR", label: "Начинающий" },
@@ -136,22 +203,56 @@ const experienceLabels: Record<string, string> = {
   SENIOR: "Опытный",
 };
 
-function formatSalary(min?: number | null, max?: number | null) {
-  if (!min && !max) return "Зарплата не указана";
-  if (min && max) return `${min.toLocaleString("ru-RU")}–${max.toLocaleString("ru-RU")} ₸`;
-  if (min) return `от ${min.toLocaleString("ru-RU")} ₸`;
-  return `до ${max?.toLocaleString("ru-RU")} ₸`;
+function readSession(): Session | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed?.email || !parsed?.role) return null;
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function readArray<T>(key: string): T[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function readCandidateProfile(sessionId: string): CandidateProfile | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = localStorage.getItem(`mj_candidate_profile_${sessionId}`);
+    if (!raw) return null;
+
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function saveApplications(applications: any[]) {
+  localStorage.setItem(APPLICATIONS_KEY, JSON.stringify(applications));
+  localStorage.setItem("mangystau_applications", JSON.stringify(applications));
 }
 
 function parseSkills(value?: string | null) {
   if (!value) return [];
-
-  try {
-    const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
-  } catch {
-    // comma string
-  }
 
   return value
     .split(",")
@@ -159,240 +260,165 @@ function parseSkills(value?: string | null) {
     .filter(Boolean);
 }
 
-function getCompanyName(job: Job) {
-  return job.employer?.companyName || "Компания";
-}
+function formatSalary(min?: number | null, max?: number | null) {
+  if (!min && !max) return "Зарплата не указана";
 
-function getJobAge(createdAt?: string) {
-  if (!createdAt) return "обновлено недавно";
-
-  const created = new Date(createdAt).getTime();
-  const now = Date.now();
-  const diffHours = Math.max(1, Math.round((now - created) / 1000 / 60 / 60));
-
-  if (diffHours < 24) return `${diffHours} ч назад`;
-  const days = Math.round(diffHours / 24);
-  return `${days} дн. назад`;
-}
-
-
-const JOBS_KEY = "mj_jobs";
-
-function readLocalJobs(): Job[] {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const raw = localStorage.getItem(JOBS_KEY);
-    if (!raw) return [];
-
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as Job[]) : [];
-  } catch {
-    return [];
+  if (min && max) {
+    return `${min.toLocaleString("ru-RU")}–${max.toLocaleString("ru-RU")} ₸`;
   }
-}
 
-const fallbackJobs = [
-  {
-    id: "fallback-job-1",
-    title: "Официант / Официантка",
-    description: "Работа в кафе рядом с домом. Можно без опыта, главное — ответственность и пунктуальность.",
-    sector: "Общественное питание",
-    experienceLevel: "NO_EXPERIENCE",
-    employmentType: "PART_TIME",
-    city: "Актау",
-    district: "Микрорайон 7",
-    salaryMin: 90000,
-    salaryMax: 130000,
-    skills: "Ответственность, Коммуникабельность, Пунктуальность, Работа с клиентами",
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    employer: {
-      id: "fallback-employer-1",
-      companyName: "Кафе «Каспий»",
-    },
-    _count: {
-      applications: 1,
-    },
-  },
-  {
-    id: "fallback-job-2",
-    title: "Курьер-доставщик",
-    description: "Доставка заказов по районам Актау. Подходит для студентов и молодых специалистов.",
-    sector: "Доставка",
-    experienceLevel: "NO_EXPERIENCE",
-    employmentType: "PART_TIME",
-    city: "Актау",
-    district: "Микрорайон 12",
-    salaryMin: 80000,
-    salaryMax: 150000,
-    skills: "Знание города, Ответственность, Пунктуальность",
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    employer: {
-      id: "fallback-employer-2",
-      companyName: "Caspian Logistics",
-    },
-    _count: {
-      applications: 0,
-    },
-  },
-  {
-    id: "fallback-job-3",
-    title: "Оператор склада",
-    description: "Работа на складе в промзоне. Нужны внимательность и физическая выносливость.",
-    sector: "Логистика",
-    experienceLevel: "JUNIOR",
-    employmentType: "FULL_TIME",
-    city: "Актау",
-    district: "Промзона",
-    salaryMin: 120000,
-    salaryMax: 180000,
-    skills: "Физическая выносливость, Ответственность, Внимательность",
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    employer: {
-      id: "fallback-employer-3",
-      companyName: "Aktau Supply",
-    },
-    _count: {
-      applications: 0,
-    },
-  },
-] as Job[];
+  if (min) return `от ${min.toLocaleString("ru-RU")} ₸`;
+
+  return `до ${max?.toLocaleString("ru-RU")} ₸`;
+}
 
 export default function JobsPage() {
+  const [session, setSession] = useState<Session | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"list" | "map">("list");
 
   const [search, setSearch] = useState("");
-  const [sector, setSector] = useState("");
-  const [district, setDistrict] = useState("");
+  const [sector, setSector] = useState("Все сферы");
+  const [district, setDistrict] = useState("Все районы");
   const [employmentType, setEmploymentType] = useState("");
   const [experienceLevel, setExperienceLevel] = useState("");
 
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [selectedCandidateId, setSelectedCandidateId] = useState("");
-  const [coverLetter, setCoverLetter] = useState("");
-  const [applyLoading, setApplyLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [applyJob, setApplyJob] = useState<Job | null>(null);
+  const [applyMessage, setApplyMessage] = useState("");
+  const [applyError, setApplyError] = useState("");
+  const [applySuccess, setApplySuccess] = useState("");
+  const [sendingApplication, setSendingApplication] = useState(false);
+  const [myCandidateProfile, setMyCandidateProfile] =
+    useState<CandidateProfile | null>(null);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("view") === "map") setView("map");
-  }, []);
-
-  useEffect(() => {
-    fetchCandidates();
-  }, []);
-
-  useEffect(() => {
+    setSession(readSession());
     fetchJobs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, sector, district, employmentType, experienceLevel]);
-
-  async function fetchCandidates() {
-    try {
-      const res = await fetch("/api/candidates");
-      const data = await res.json();
-      const list = Array.isArray(data) ? data : data.candidates || data.data || [];
-      setCandidates(list);
-      if (list[0]?.id) setSelectedCandidateId(list[0].id);
-    } catch {
-      setCandidates([]);
-    }
-  }
+  }, []);
 
   async function fetchJobs() {
     setLoading(true);
 
     try {
-      const params = new URLSearchParams();
+      const localJobs = readArray<Job>(JOBS_KEY);
 
-      if (search.trim()) params.set("search", search.trim());
-      if (sector && sector !== "Все сферы") params.set("sector", sector);
-      if (district && district !== "Все районы") params.set("district", district);
-      if (employmentType) params.set("employmentType", employmentType);
-      if (experienceLevel) params.set("experienceLevel", experienceLevel);
-
-      const localJobs = readLocalJobs();
-
-      const filteredLocalJobs = localJobs.filter((job) => {
-        const query = search.trim().toLowerCase();
-
-        const matchesSearch =
-          !query ||
-          job.title?.toLowerCase().includes(query) ||
-          job.description?.toLowerCase().includes(query) ||
-          job.sector?.toLowerCase().includes(query) ||
-          job.district?.toLowerCase().includes(query) ||
-          job.employer?.companyName?.toLowerCase().includes(query);
-
-        const matchesSector =
-          !sector || sector === "Все сферы" || job.sector === sector;
-
-        const matchesDistrict =
-          !district || district === "Все районы" || job.district === district;
-
-        const matchesEmployment =
-          !employmentType || job.employmentType === employmentType;
-
-        const matchesExperience =
-          !experienceLevel || job.experienceLevel === experienceLevel;
-
-        return (
-          matchesSearch &&
-          matchesSector &&
-          matchesDistrict &&
-          matchesEmployment &&
-          matchesExperience
-        );
-      });
-
-      const res = await fetch(`/api/jobs?${params.toString()}`);
+      const res = await fetch("/api/jobs", { cache: "no-store" });
       const data = await res.json();
-      const apiJobs = Array.isArray(data) ? data : data.jobs || data.data || [];
+      const apiJobs: Job[] = Array.isArray(data)
+        ? data
+        : data.jobs || data.data || [];
 
       const merged = [
-        ...filteredLocalJobs,
+        ...localJobs,
         ...apiJobs.filter(
-          (apiJob: Job) =>
-            !filteredLocalJobs.some((localJob) => localJob.id === apiJob.id)
+          (apiJob) => !localJobs.some((localJob) => localJob.id === apiJob.id)
         ),
       ];
 
       setJobs(merged.length > 0 ? merged : fallbackJobs);
     } catch {
-      const localJobs = readLocalJobs();
+      const localJobs = readArray<Job>(JOBS_KEY);
       setJobs(localJobs.length > 0 ? localJobs : fallbackJobs);
     } finally {
       setLoading(false);
     }
   }
 
-  function clearFilters() {
-    setSearch("");
-    setSector("");
-    setDistrict("");
-    setEmploymentType("");
-    setExperienceLevel("");
+  const filteredJobs = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return jobs.filter((job) => {
+      const matchesSearch =
+        !query ||
+        job.title?.toLowerCase().includes(query) ||
+        job.description?.toLowerCase().includes(query) ||
+        job.sector?.toLowerCase().includes(query) ||
+        job.district?.toLowerCase().includes(query) ||
+        job.employer?.companyName?.toLowerCase().includes(query);
+
+      const matchesSector = sector === "Все сферы" || job.sector === sector;
+      const matchesDistrict =
+        district === "Все районы" || job.district === district;
+      const matchesEmployment =
+        !employmentType || job.employmentType === employmentType;
+      const matchesExperience =
+        !experienceLevel || job.experienceLevel === experienceLevel;
+
+      return (
+        matchesSearch &&
+        matchesSector &&
+        matchesDistrict &&
+        matchesEmployment &&
+        matchesExperience &&
+        job.isActive !== false
+      );
+    });
+  }, [jobs, search, sector, district, employmentType, experienceLevel]);
+
+  function openApplyModal(job: Job) {
+    setApplyJob(job);
+    setApplyMessage("");
+    setApplyError("");
+    setApplySuccess("");
+
+    const currentSession = readSession();
+    setSession(currentSession);
+
+    if (currentSession?.role === "candidate") {
+      setMyCandidateProfile(readCandidateProfile(currentSession.id));
+    } else {
+      setMyCandidateProfile(null);
+    }
   }
 
-  async function submitApplication() {
-    if (!selectedJob) return;
+  function closeApplyModal() {
+    setApplyJob(null);
+    setApplyMessage("");
+    setApplyError("");
+    setApplySuccess("");
+    setSendingApplication(false);
+  }
 
-    if (!selectedCandidateId) {
-      setMessage({
-        type: "error",
-        text: "Сначала выберите профиль соискателя.",
-      });
+  async function handleSendApplication() {
+    if (!applyJob) return;
+
+    const currentSession = readSession();
+
+    if (!currentSession) {
+      setApplyError("Сначала войдите в аккаунт соискателя.");
       return;
     }
 
-    setApplyLoading(true);
-    setMessage(null);
+    if (currentSession.role !== "candidate") {
+      setApplyError("Откликнуться может только соискатель.");
+      return;
+    }
+
+    const profile = readCandidateProfile(currentSession.id);
+
+    if (!profile) {
+      setApplyError("Сначала создайте профиль соискателя в кабинете.");
+      return;
+    }
+
+    setMyCandidateProfile(profile);
+    setSendingApplication(true);
+    setApplyError("");
+    setApplySuccess("");
+
+    const newApplication = {
+      id: `application-${Date.now()}`,
+      jobId: applyJob.id,
+      candidateId: profile.id,
+      employerId: applyJob.employer?.id || null,
+      message:
+        applyMessage.trim() ||
+        "Здравствуйте! Меня заинтересовала ваша вакансия. Готов(а) обсудить детали.",
+      status: "NEW",
+      createdAt: new Date().toISOString(),
+      job: applyJob,
+      candidate: profile,
+    };
 
     try {
       const res = await fetch("/api/applications", {
@@ -401,56 +427,55 @@ export default function JobsPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          jobId: selectedJob.id,
-          candidateId: selectedCandidateId,
-          coverLetter,
+          jobId: applyJob.id,
+          candidateId: profile.id,
+          message: newApplication.message,
         }),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        setMessage({
-          type: "error",
-          text: data.error || data.message || "Не удалось отправить отклик.",
-        });
-        return;
+        throw new Error("API error");
+      }
+    } catch {
+      const existing = readArray<any>(APPLICATIONS_KEY);
+      saveApplications([newApplication, ...existing]);
+    } finally {
+      const existing = readArray<any>(APPLICATIONS_KEY);
+      const alreadySaved = existing.some((item) => item.id === newApplication.id);
+
+      if (!alreadySaved) {
+        saveApplications([newApplication, ...existing]);
       }
 
-      setMessage({
-        type: "success",
-        text: data.message || "Отклик отправлен работодателю.",
-      });
+      setApplySuccess("Отклик успешно отправлен работодателю.");
+      setSendingApplication(false);
 
-      setCoverLetter("");
-      await fetchJobs();
-    } catch {
-      setMessage({
-        type: "error",
-        text: "Ошибка соединения. Попробуйте ещё раз.",
-      });
-    } finally {
-      setApplyLoading(false);
+      setTimeout(() => {
+        closeApplyModal();
+      }, 900);
     }
   }
 
-  const activeFilterCount = useMemo(() => {
-    return [search, sector, district, employmentType, experienceLevel].filter(Boolean).length;
-  }, [search, sector, district, employmentType, experienceLevel]);
+  function resetFilters() {
+    setSearch("");
+    setSector("Все сферы");
+    setDistrict("Все районы");
+    setEmploymentType("");
+    setExperienceLevel("");
+  }
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-950">
-      {/* Header */}
       <section className="border-b border-slate-200 bg-white">
         <div className="mx-auto max-w-7xl px-6 py-12 lg:px-8">
-          <div className="flex flex-col justify-between gap-8 lg:flex-row lg:items-end">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
-                <BriefcaseBusiness className="h-4 w-4" />
-                Проверенные вакансии в Мангистау
-              </div>
+          <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
+            <BriefcaseBusiness className="h-4 w-4" />
+            Проверенные вакансии в Мангистау
+          </div>
 
-              <h1 className="mt-5 text-4xl font-bold tracking-tight text-slate-950 sm:text-5xl">
+          <div className="mt-5 flex flex-col justify-between gap-8 lg:flex-row lg:items-end">
+            <div>
+              <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-slate-950 sm:text-5xl">
                 Найди работу рядом
               </h1>
 
@@ -463,325 +488,271 @@ export default function JobsPage() {
             <div className="flex flex-col gap-3 sm:flex-row">
               <Link
                 href="/candidate"
-                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
               >
                 Создать профиль
               </Link>
 
-              <Link
-                href="/ai-match"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-600"
-              >
-                <Sparkles className="h-4 w-4" />
-                Умный подбор
-              </Link>
+              {session && (
+                <Link
+                  href="/ai-match"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-600"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Подбор
+                </Link>
+              )}
             </div>
           </div>
 
-          <div className="mt-10 rounded-[1.5rem] border border-blue-100 bg-blue-50 p-5">
-            <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-              <div className="flex gap-4">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white">
-                  <Sparkles className="h-5 w-5" />
+          {session && (
+            <div className="mt-8 rounded-[1.5rem] border border-blue-100 bg-blue-50 p-5">
+              <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+                <div className="flex gap-4">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+
+                  <div>
+                    <h2 className="font-semibold text-slate-950">
+                      Умный подбор помогает выбрать подходящее
+                    </h2>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Открой страницу подбора, чтобы увидеть предложения с
+                      объяснением по навыкам, району, опыту и зарплате.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="font-semibold text-slate-950">
-                    Умный подбор помогает не просто искать, а выбирать подходящее
-                  </h2>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">
-                    Открой страницу подбора, выбери профиль и получи вакансии с
-                    объяснением по навыкам, району, опыту и зарплате.
-                  </p>
-                </div>
+
+                <Link
+                  href="/ai-match"
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-600 hover:text-white"
+                >
+                  Попробовать подбор
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
               </div>
-
-              <Link
-                href="/ai-match"
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-600 hover:text-white"
-              >
-                Попробовать подбор
-                <ArrowRight className="h-4 w-4" />
-              </Link>
             </div>
-          </div>
+          )}
         </div>
       </section>
 
-      {/* Content */}
-      <section className="mx-auto grid max-w-7xl gap-8 px-6 py-10 lg:grid-cols-[320px_1fr] lg:px-8">
-        {/* Filters */}
-        <aside className="h-fit rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-24">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Filter className="h-5 w-5 text-blue-600" />
-              <h2 className="font-semibold text-slate-950">Фильтры</h2>
-            </div>
-
-            {activeFilterCount > 0 && (
-              <button
-                onClick={clearFilters}
-                className="text-sm font-medium text-blue-600 hover:text-blue-700"
-              >
-                Сбросить
-              </button>
-            )}
+      <section className="mx-auto grid max-w-7xl gap-8 px-6 py-10 lg:grid-cols-[340px_1fr] lg:px-8">
+        <aside className="h-fit rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-24">
+          <div className="flex items-center gap-2">
+            <Filter className="h-5 w-5 text-blue-600" />
+            <h2 className="text-xl font-bold text-slate-950">Фильтры</h2>
           </div>
 
-          <div className="mt-6 space-y-5">
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Поиск</span>
-              <div className="mt-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3">
-                <Search className="h-4 w-4 text-slate-400" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Курьер, кафе, склад..."
-                  className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-                />
-              </div>
-            </label>
-
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Сфера</span>
-              <select
-                value={sector}
-                onChange={(e) => setSector(e.target.value)}
-                className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-300"
-              >
-                {sectors.map((item) => (
-                  <option key={item} value={item === "Все сферы" ? "" : item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Район</span>
-              <select
-                value={district}
-                onChange={(e) => setDistrict(e.target.value)}
-                className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-300"
-              >
-                {districts.map((item) => (
-                  <option key={item} value={item === "Все районы" ? "" : item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">
-                Тип занятости
-              </span>
-              <select
-                value={employmentType}
-                onChange={(e) => setEmploymentType(e.target.value)}
-                className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-300"
-              >
-                {employmentTypes.map((item) => (
-                  <option key={item.label} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Опыт</span>
-              <select
-                value={experienceLevel}
-                onChange={(e) => setExperienceLevel(e.target.value)}
-                className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-300"
-              >
-                {experienceLevels.map((item) => (
-                  <option key={item.label} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div className="mt-6 rounded-2xl bg-slate-50 p-4">
-            <div className="text-sm font-semibold text-slate-950">
-              Найдено вакансий
+          <label className="mt-6 block">
+            <span className="text-sm font-medium text-slate-700">Поиск</span>
+            <div className="mt-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3">
+              <Search className="h-4 w-4 text-slate-400" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Курьер, кафе, склад..."
+                className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+              />
             </div>
-            <div className="mt-1 text-3xl font-bold text-blue-600">
-              {jobs.length}
-            </div>
-          </div>
+          </label>
+
+          <label className="mt-5 block">
+            <span className="text-sm font-medium text-slate-700">Сфера</span>
+            <select
+              value={sector}
+              onChange={(event) => setSector(event.target.value)}
+              className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-300"
+            >
+              {sectors.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="mt-5 block">
+            <span className="text-sm font-medium text-slate-700">Район</span>
+            <select
+              value={district}
+              onChange={(event) => setDistrict(event.target.value)}
+              className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-300"
+            >
+              {districts.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="mt-5 block">
+            <span className="text-sm font-medium text-slate-700">
+              Тип занятости
+            </span>
+            <select
+              value={employmentType}
+              onChange={(event) => setEmploymentType(event.target.value)}
+              className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-300"
+            >
+              {employmentOptions.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="mt-5 block">
+            <span className="text-sm font-medium text-slate-700">Опыт</span>
+            <select
+              value={experienceLevel}
+              onChange={(event) => setExperienceLevel(event.target.value)}
+              className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-300"
+            >
+              {experienceOptions.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            onClick={resetFilters}
+            className="mt-6 w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-600"
+          >
+            Сбросить фильтры
+          </button>
         </aside>
 
-        {/* Main */}
         <div>
-          <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+          <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div>
               <h2 className="text-2xl font-bold tracking-tight text-slate-950">
                 Актуальные вакансии
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                Данные загружаются из базы и обновляются после новых публикаций.
+                Найдено вакансий: {filteredJobs.length}
               </p>
             </div>
 
-            <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-              <button
-                onClick={() => setView("list")}
-                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
-                  view === "list"
-                    ? "bg-slate-950 text-white"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                <Layers className="h-4 w-4" />
-                Список
-              </button>
-
-              <button
-                onClick={() => setView("map")}
-                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
-                  view === "map"
-                    ? "bg-slate-950 text-white"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                <MapPin className="h-4 w-4" />
-                Карта
-              </button>
-            </div>
+            <Link
+              href="/map"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              <MapPin className="h-4 w-4" />
+              Карта
+            </Link>
           </div>
 
           {loading ? (
-            <div className="flex h-80 items-center justify-center rounded-[1.5rem] border border-slate-200 bg-white">
+            <div className="flex h-80 items-center justify-center rounded-[2rem] border border-slate-200 bg-white">
               <div className="flex items-center gap-3 text-slate-500">
                 <Loader2 className="h-5 w-5 animate-spin" />
                 Загружаем вакансии...
               </div>
             </div>
-          ) : jobs.length === 0 ? (
-            <div className="rounded-[1.5rem] border border-slate-200 bg-white p-10 text-center shadow-sm">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
-                <SlidersHorizontal className="h-6 w-6 text-slate-500" />
+          ) : filteredJobs.length === 0 ? (
+            <div className="rounded-[2rem] border border-slate-200 bg-white p-10 text-center shadow-sm">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                <BriefcaseBusiness className="h-6 w-6" />
               </div>
+
               <h3 className="mt-6 text-xl font-semibold text-slate-950">
                 По этим фильтрам вакансий пока нет
               </h3>
+
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
                 Попробуйте изменить район, сферу или тип занятости.
               </p>
-              <button
-                onClick={clearFilters}
-                className="mt-6 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white"
-              >
-                Сбросить фильтры
-              </button>
-            </div>
-          ) : view === "map" ? (
-            <div className="space-y-5">
-              <JobMap jobs={jobs} height="520px" />
-
-              <div className="grid gap-4 md:grid-cols-2">
-                {jobs.slice(0, 4).map((job) => (
-                  <JobListCard key={job.id} job={job} onApply={() => setSelectedJob(job)} compact />
-                ))}
-              </div>
             </div>
           ) : (
-            <div className="space-y-5">
-              {jobs.map((job) => (
-                <JobListCard key={job.id} job={job} onApply={() => setSelectedJob(job)} />
+            <div className="grid gap-5">
+              {filteredJobs.map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  onApply={() => openApplyModal(job)}
+                />
               ))}
             </div>
           )}
         </div>
       </section>
 
-      {/* Apply modal */}
-      {selectedJob && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-[1.5rem] bg-white p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
+      {applyJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-xl font-bold text-slate-950">
+                <h3 className="text-3xl font-bold text-slate-950">
                   Отклик на вакансию
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  {selectedJob.title} · {getCompanyName(selectedJob)}
+                </h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  {applyJob.title} ·{" "}
+                  {applyJob.employer?.companyName || "Работодатель"}
                 </p>
               </div>
 
               <button
-                onClick={() => {
-                  setSelectedJob(null);
-                  setMessage(null);
-                }}
-                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                onClick={closeApplyModal}
+                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="mt-5 space-y-5">
-              <label className="block">
-                <span className="text-sm font-medium text-slate-700">
-                  Выберите профиль соискателя
-                </span>
-                <select
-                  value={selectedCandidateId}
-                  onChange={(e) => setSelectedCandidateId(e.target.value)}
-                  className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-300"
-                >
-                  {candidates.map((candidate) => (
-                    <option key={candidate.id} value={candidate.id}>
-                      {candidate.user?.name || "Кандидат"} · {candidate.district || "район не указан"}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <div className="mb-4 h-px w-full bg-slate-200" />
 
-              <label className="block">
-                <span className="text-sm font-medium text-slate-700">
-                  Короткое сообщение работодателю
-                </span>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm text-slate-500">Профиль соискателя</p>
+
+                <p className="mt-1 text-base font-semibold text-slate-900">
+                  {myCandidateProfile?.user?.name ||
+                    session?.name ||
+                    "Профиль не найден"}
+                </p>
+
+                {!myCandidateProfile && (
+                  <p className="mt-2 text-sm text-red-500">
+                    Чтобы отправить отклик, сначала создайте профиль соискателя
+                    в кабинете.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Сообщение работодателю
+                </label>
+
                 <textarea
-                  value={coverLetter}
-                  onChange={(e) => setCoverLetter(e.target.value)}
-                  rows={5}
-                  placeholder="Здравствуйте! Меня заинтересовала вакансия..."
-                  className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-blue-300"
+                  value={applyMessage}
+                  onChange={(event) => setApplyMessage(event.target.value)}
+                  placeholder="Например: Здравствуйте! Меня заинтересовала ваша вакансия. Готов(а) выйти на работу в ближайшее время."
+                  rows={6}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-blue-500"
                 />
-              </label>
+              </div>
 
-              {message && (
-                <div
-                  className={`rounded-xl p-4 text-sm font-medium ${
-                    message.type === "success"
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-red-50 text-red-700"
-                  }`}
-                >
-                  {message.text}
+              {applyError && (
+                <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
+                  {applyError}
+                </div>
+              )}
+
+              {applySuccess && (
+                <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-600">
+                  {applySuccess}
                 </div>
               )}
 
               <button
-                onClick={submitApplication}
-                disabled={applyLoading}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+                onClick={handleSendApplication}
+                disabled={sendingApplication}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {applyLoading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Отправляем...
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-4 w-4" />
-                    Отправить отклик
-                  </>
-                )}
+                <Send className="h-4 w-4" />
+                {sendingApplication ? "Отправка..." : "Отправить отклик"}
               </button>
             </div>
           </div>
@@ -791,31 +762,31 @@ export default function JobsPage() {
   );
 }
 
-function JobListCard({
-  job,
-  onApply,
-  compact = false,
-}: {
-  job: Job;
-  onApply: () => void;
-  compact?: boolean;
-}) {
-  const skills = parseSkills(job.skills).slice(0, compact ? 3 : 5);
+function JobCard({ job, onApply }: { job: Job; onApply: () => void }) {
+  const skills = parseSkills(job.skills).slice(0, 6);
 
   return (
-    <article className="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+    <article className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
       <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
-        <div className="min-w-0">
+        <div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-              {employmentLabels[job.employmentType] || job.employmentType}
+              {employmentLabels[job.employmentType || ""] ||
+                job.employmentType ||
+                "Тип работы"}
             </span>
+
             <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-              {experienceLabels[job.experienceLevel] || job.experienceLevel}
+              {experienceLabels[job.experienceLevel || ""] ||
+                job.experienceLevel ||
+                "Опыт"}
             </span>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-              {job.sector}
-            </span>
+
+            {job.sector && (
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                {job.sector}
+              </span>
+            )}
           </div>
 
           <h3 className="mt-4 text-2xl font-bold tracking-tight text-slate-950">
@@ -823,19 +794,16 @@ function JobListCard({
           </h3>
 
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500">
-            <span className="font-medium text-slate-700">{getCompanyName(job)}</span>
+            <span>{job.employer?.companyName || "Компания"}</span>
             <span className="inline-flex items-center gap-1">
               <MapPin className="h-4 w-4" />
-              {job.city}, {job.district}
+              {job.city || "Актау"}, {job.district || "район не указан"}
             </span>
-            <span>{getJobAge(job.createdAt)}</span>
           </div>
 
-          {!compact && (
-            <p className="mt-4 max-w-3xl text-base leading-7 text-slate-600">
-              {job.description}
-            </p>
-          )}
+          <p className="mt-4 max-w-3xl text-base leading-7 text-slate-600">
+            {job.description}
+          </p>
 
           <div className="mt-5 flex flex-wrap gap-2">
             {skills.map((skill) => (
@@ -849,8 +817,8 @@ function JobListCard({
           </div>
         </div>
 
-        <div className="shrink-0 lg:w-52">
-          <div className="rounded-2xl bg-slate-50 p-4 text-left lg:text-right">
+        <div className="shrink-0 lg:w-56">
+          <div className="rounded-2xl bg-slate-50 p-4 text-right">
             <div className="text-lg font-bold text-slate-950">
               {formatSalary(job.salaryMin, job.salaryMax)}
             </div>
@@ -859,23 +827,21 @@ function JobListCard({
             </div>
           </div>
 
-          <div className="mt-3 grid gap-2">
-            <button
-              onClick={onApply}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
-            >
-              Откликнуться
-              <ArrowRight className="h-4 w-4" />
-            </button>
+          <button
+            onClick={onApply}
+            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+          >
+            Откликнуться
+            <ArrowRight className="h-4 w-4" />
+          </button>
 
-            <Link
-              href={`/ai-match?jobId=${job.id}`}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              <Sparkles className="h-4 w-4" />
-              Подбор
-            </Link>
-          </div>
+          <Link
+            href={`/ai-match?jobId=${job.id}`}
+            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            <Sparkles className="h-4 w-4" />
+            Подбор
+          </Link>
         </div>
       </div>
     </article>

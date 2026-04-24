@@ -6,7 +6,9 @@ import {
   ArrowRight,
   BriefcaseBusiness,
   Loader2,
+  Mail,
   MapPin,
+  MessageCircle,
   Search,
   Sparkles,
   UserRound,
@@ -33,6 +35,8 @@ type Candidate = {
   user?: User;
 };
 
+const PUBLIC_CANDIDATES_KEY = "mj_public_candidates";
+
 const fallbackCandidates: Candidate[] = [
   {
     id: "candidate-1",
@@ -40,7 +44,8 @@ const fallbackCandidates: Candidate[] = [
     district: "Микрорайон 7",
     experienceLevel: "NO_EXPERIENCE",
     preferredJobType: "PART_TIME",
-    skills: "Коммуникабельность, Ответственность, Пунктуальность, Работа с клиентами",
+    skills:
+      "Коммуникабельность, Ответственность, Пунктуальность, Работа с клиентами",
     bio: "Ищу подработку рядом с домом после учебы. Быстро обучаюсь и готов работать с людьми.",
     isAvailable: true,
     user: {
@@ -56,7 +61,8 @@ const fallbackCandidates: Candidate[] = [
     district: "Микрорайон 12",
     experienceLevel: "JUNIOR",
     preferredJobType: "FULL_TIME",
-    skills: "Знание города, Водительские права кат. B, Ответственность, Русский язык",
+    skills:
+      "Знание города, Водительские права кат. B, Ответственность, Русский язык",
     bio: "Готов работать курьером или помощником на складе. Хорошо знаю районы города.",
     isAvailable: true,
     user: {
@@ -64,22 +70,6 @@ const fallbackCandidates: Candidate[] = [
       name: "Дамир Сатыбалдиев",
       email: "damir@mail.kz",
       phone: "+7 708 333 4455",
-    },
-  },
-  {
-    id: "candidate-3",
-    city: "Актау",
-    district: "Центр",
-    experienceLevel: "NO_EXPERIENCE",
-    preferredJobType: "INTERNSHIP",
-    skills: "MS Office, Английский язык, Коммуникабельность, Работа в команде",
-    bio: "Ищу стажировку или первую работу. Интересуют офисные задачи, сервис и администрирование.",
-    isAvailable: true,
-    user: {
-      id: "user-3",
-      name: "Мадина Касымова",
-      email: "madina@mail.kz",
-      phone: "+7 707 222 3344",
     },
   },
 ];
@@ -119,6 +109,20 @@ const employmentLabels: Record<string, string> = {
   SEASONAL: "Сезонная работа",
 };
 
+function readPublicCandidates(): Candidate[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = localStorage.getItem(PUBLIC_CANDIDATES_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function extractArray<T>(data: any, keys: string[] = []): T[] {
   if (Array.isArray(data)) return data;
 
@@ -132,13 +136,6 @@ function extractArray<T>(data: any, keys: string[] = []): T[] {
 function parseSkills(value?: string | null) {
   if (!value) return [];
 
-  try {
-    const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
-  } catch {
-    // fallback below
-  }
-
   return value
     .split(",")
     .map((item) => item.trim())
@@ -150,21 +147,41 @@ function getPreferredType(candidate: Candidate) {
   return employmentLabels[value] || value || "Тип работы не указан";
 }
 
+function normalizePhone(value?: string | null) {
+  return (value || "").replace(/[^\d]/g, "");
+}
 
-const PUBLIC_CANDIDATES_KEY = "mj_public_candidates";
+function handleContactCandidate(candidate: Candidate) {
+  const phone = candidate.user?.phone || "";
+  const email = candidate.user?.email || "";
+  const name = candidate.user?.name || "кандидат";
+  const digits = normalizePhone(phone);
 
-function readPublicCandidates(): Candidate[] {
-  if (typeof window === "undefined") return [];
+  const text = encodeURIComponent(
+    "Здравствуйте! Меня заинтересовал ваш профиль на MangystauJobs. Хотел(а) бы связаться по поводу работы."
+  );
 
-  try {
-    const raw = localStorage.getItem(PUBLIC_CANDIDATES_KEY);
-    if (!raw) return [];
-
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+  if (digits.length >= 10) {
+    window.open(`https://wa.me/${digits}?text=${text}`, "_blank");
+    return;
   }
+
+  if (phone) {
+    window.location.href = `tel:${phone}`;
+    return;
+  }
+
+  if (email) {
+    const subject = encodeURIComponent("Предложение о работе");
+    const body = encodeURIComponent(
+      `Здравствуйте, ${name}! Меня заинтересовал ваш профиль на MangystauJobs. Хотел(а) бы обсудить работу.`
+    );
+
+    window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
+    return;
+  }
+
+  alert("У этого кандидата пока нет телефона или email для связи.");
 }
 
 export default function WorkersPage() {
@@ -185,7 +202,7 @@ export default function WorkersPage() {
     try {
       const localCandidates = readPublicCandidates();
 
-      const res = await fetch("/api/candidates");
+      const res = await fetch("/api/candidates", { cache: "no-store" });
       const data = await res.json();
       const apiCandidates = extractArray<Candidate>(data, ["candidates"]);
 
@@ -200,7 +217,9 @@ export default function WorkersPage() {
       setCandidates(merged.length > 0 ? merged : fallbackCandidates);
     } catch {
       const localCandidates = readPublicCandidates();
-      setCandidates(localCandidates.length > 0 ? localCandidates : fallbackCandidates);
+      setCandidates(
+        localCandidates.length > 0 ? localCandidates : fallbackCandidates
+      );
     } finally {
       setLoading(false);
     }
@@ -390,6 +409,8 @@ export default function WorkersPage() {
 
 function CandidateCard({ candidate }: { candidate: Candidate }) {
   const skills = parseSkills(candidate.skills).slice(0, 6);
+  const phone = candidate.user?.phone || "";
+  const email = candidate.user?.email || "";
 
   return (
     <article className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
@@ -414,10 +435,23 @@ function CandidateCard({ candidate }: { candidate: Candidate }) {
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500">
             <span className="inline-flex items-center gap-1">
               <MapPin className="h-4 w-4" />
-              {candidate.city || "Актау"}, {candidate.district || "район не указан"}
+              {candidate.city || "Актау"},{" "}
+              {candidate.district || "район не указан"}
             </span>
 
-            <span>{candidate.user?.phone || candidate.user?.email}</span>
+            {phone && (
+              <span className="inline-flex items-center gap-1">
+                <MessageCircle className="h-4 w-4" />
+                {phone}
+              </span>
+            )}
+
+            {!phone && email && (
+              <span className="inline-flex items-center gap-1">
+                <Mail className="h-4 w-4" />
+                {email}
+              </span>
+            )}
           </div>
 
           {candidate.bio && (
@@ -447,7 +481,10 @@ function CandidateCard({ candidate }: { candidate: Candidate }) {
             Открыть подбор
           </Link>
 
-          <button className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+          <button
+            onClick={() => handleContactCandidate(candidate)}
+            className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
             Связаться
           </button>
         </div>
