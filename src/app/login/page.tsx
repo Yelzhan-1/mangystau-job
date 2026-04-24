@@ -38,10 +38,6 @@ type Session = {
 const ACCOUNTS_KEY = "mj_accounts";
 const SESSION_KEY = "mj_session";
 
-/**
- * Admin credentials for demo.
- * Change these before presentation if you want your own private access.
- */
 const ADMIN_EMAIL = "admin@mangystaujobs.kz";
 const ADMIN_PASSWORD = "admin12345";
 const ADMIN_ACCESS_CODE = "MANGYSTAU-ADMIN";
@@ -51,21 +47,18 @@ const publicRoles: {
   title: string;
   description: string;
   icon: typeof UserRound;
-  href: string;
 }[] = [
   {
     id: "candidate",
     title: "Я ищу работу",
     description: "Создать профиль, смотреть вакансии и получать подбор.",
     icon: UserRound,
-    href: "/candidate",
   },
   {
     id: "employer",
     title: "Я работодатель",
-    description: "Размещать вакансии, получать отклики и искать кандидатов.",
+    description: "Размещать вакансии, смотреть отклики и искать кандидатов.",
     icon: Building2,
-    href: "/employer",
   },
 ];
 
@@ -79,6 +72,7 @@ function readAccounts(): Account[] {
   try {
     const raw = localStorage.getItem(ACCOUNTS_KEY);
     if (!raw) return [];
+
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -107,6 +101,8 @@ function saveSession(session: Session) {
   } else {
     clearCookie("mj_admin");
   }
+
+  window.dispatchEvent(new Event("mj-auth-change"));
 }
 
 function seedDemoAccounts() {
@@ -148,6 +144,7 @@ function seedDemoAccounts() {
 
 export default function LoginPage() {
   const router = useRouter();
+
   const [mode, setMode] = useState<Mode>("login");
   const [role, setRole] = useState<PublicRole>("candidate");
   const [adminMode, setAdminMode] = useState(false);
@@ -162,12 +159,9 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const selectedRole = useMemo(
-    () => publicRoles.find((item) => item.id === role) || publicRoles[0],
-    [role]
-  );
-
-  const SelectedIcon = selectedRole.icon;
+  const selectedRole = useMemo(() => {
+    return publicRoles.find((item) => item.id === role) || publicRoles[0];
+  }, [role]);
 
   useEffect(() => {
     seedDemoAccounts();
@@ -177,7 +171,7 @@ export default function LoginPage() {
     const queryRole = params.get("role");
     const admin = params.get("admin");
 
-    if (queryMode === "register" || queryMode === "login") {
+    if (queryMode === "login" || queryMode === "register") {
       setMode(queryMode);
     }
 
@@ -205,18 +199,15 @@ export default function LoginPage() {
     }
   }
 
-  function switchRole(nextRole: PublicRole) {
-    resetMessages();
-    setRole(nextRole);
-  }
-
   function validateBaseFields() {
-    if (!email.trim() || !password.trim()) {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail || !password.trim()) {
       setError("Введите email и пароль.");
       return false;
     }
 
-    if (!isValidEmail(email.trim())) {
+    if (!isValidEmail(normalizedEmail)) {
       setError("Введите корректный email.");
       return false;
     }
@@ -234,6 +225,8 @@ export default function LoginPage() {
 
     if (!validateBaseFields()) return;
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     if (role === "candidate" && !name.trim()) {
       setError("Введите имя соискателя.");
       return;
@@ -245,7 +238,6 @@ export default function LoginPage() {
     }
 
     const accounts = readAccounts();
-    const normalizedEmail = email.trim().toLowerCase();
 
     const exists = accounts.some(
       (account) => account.email.toLowerCase() === normalizedEmail
@@ -267,19 +259,16 @@ export default function LoginPage() {
 
     saveAccounts([...accounts, account]);
 
-    const session: Session = {
+    saveSession({
       id: account.id,
       name: account.name,
       email: account.email,
       role: account.role,
       createdAt: new Date().toISOString(),
-    };
-
-    saveSession(session);
+    });
 
     setSuccess("Аккаунт создан. Переходим в кабинет...");
-
-    router.push(role === "candidate" ? "/candidate" : "/employer");
+    router.push("/account");
   }
 
   function handleLogin() {
@@ -290,40 +279,38 @@ export default function LoginPage() {
     const normalizedEmail = email.trim().toLowerCase();
 
     if (adminMode) {
-      const correctAdmin =
+      const isCorrectAdmin =
         normalizedEmail === ADMIN_EMAIL.toLowerCase() &&
         password === ADMIN_PASSWORD &&
         adminCode.trim() === ADMIN_ACCESS_CODE;
 
-      if (!correctAdmin) {
+      if (!isCorrectAdmin) {
         setError("Неверные данные администратора.");
         return;
       }
 
-      const session: Session = {
+      saveSession({
         id: "admin",
         name: "Platform Admin",
         email: ADMIN_EMAIL,
         role: "admin",
         createdAt: new Date().toISOString(),
-      };
+      });
 
-      saveSession(session);
-
-      setSuccess("Вход администратора выполнен. Переходим в модерацию...");
-
+      setSuccess("Вход администратора выполнен.");
       router.push("/admin");
       return;
     }
 
     const accounts = readAccounts();
 
-    const account = accounts.find(
-      (item) =>
+    const account = accounts.find((item) => {
+      return (
         item.email.toLowerCase() === normalizedEmail &&
         item.password === password &&
         item.role === role
-    );
+      );
+    });
 
     if (!account) {
       setError(
@@ -332,19 +319,16 @@ export default function LoginPage() {
       return;
     }
 
-    const session: Session = {
+    saveSession({
       id: account.id,
       name: account.name,
       email: account.email,
       role: account.role,
       createdAt: new Date().toISOString(),
-    };
-
-    saveSession(session);
+    });
 
     setSuccess("Вход выполнен. Переходим в кабинет...");
-
-    router.push(account.role === "candidate" ? "/candidate" : "/employer");
+    router.push("/account");
   }
 
   function handleSubmit() {
@@ -376,16 +360,27 @@ export default function LoginPage() {
 
           <div className="mt-12 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
             <LockKeyhole className="h-4 w-4" />
-            Вход в платформу
+            {adminMode
+              ? "Административный доступ"
+              : mode === "login"
+                ? "Вход в аккаунт"
+                : "Регистрация"}
           </div>
 
           <h1 className="mt-5 max-w-2xl text-5xl font-bold leading-tight tracking-tight text-slate-950">
-            Аккаунт для поиска работы и найма
+            {adminMode
+              ? "Вход для администратора платформы"
+              : mode === "login"
+                ? "Войдите в свой кабинет"
+                : "Создайте аккаунт для работы с платформой"}
           </h1>
 
           <p className="mt-5 max-w-xl text-lg leading-8 text-slate-600">
-            Войдите или создайте аккаунт как соискатель или работодатель. Доступ
-            к модерации доступен только администратору платформы.
+            {adminMode
+              ? "Админ-доступ скрыт от обычных пользователей и используется только для модерации работодателей и вакансий."
+              : mode === "login"
+                ? "Выберите роль, введите email и пароль. После входа вы попадёте в личный кабинет."
+                : "Выберите роль: соискатель или работодатель. Админ-аккаунты не создаются через публичную регистрацию."}
           </p>
 
           <div className="mt-10 grid gap-4 sm:grid-cols-3">
@@ -394,60 +389,66 @@ export default function LoginPage() {
             <InfoCard value="Проверка" label="работодателей" />
           </div>
 
-          <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="text-sm font-semibold text-slate-950">
-              Demo accounts
-            </div>
-            <div className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
-              <div>
-                Соискатель:{" "}
-                <span className="font-semibold text-slate-900">
-                  candidate@mangystaujobs.kz
-                </span>{" "}
-                / password123
+          {!adminMode && (
+            <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="text-sm font-semibold text-slate-950">
+                Тестовые аккаунты
               </div>
-              <div>
-                Работодатель:{" "}
-                <span className="font-semibold text-slate-900">
-                  employer@mangystaujobs.kz
-                </span>{" "}
-                / password123
+
+              <div className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
+                <div>
+                  Соискатель:{" "}
+                  <span className="font-semibold text-slate-900">
+                    candidate@mangystaujobs.kz
+                  </span>{" "}
+                  / password123
+                </div>
+
+                <div>
+                  Работодатель:{" "}
+                  <span className="font-semibold text-slate-900">
+                    employer@mangystaujobs.kz
+                  </span>{" "}
+                  / password123
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl">
-          <div className="grid rounded-[1.5rem] bg-slate-100 p-1 sm:grid-cols-2">
-            <button
-              onClick={() => switchMode("login")}
-              className={`rounded-[1.25rem] px-5 py-3 text-sm font-semibold transition ${
-                mode === "login"
-                  ? "bg-white text-slate-950 shadow-sm"
-                  : "text-slate-500 hover:text-slate-950"
-              }`}
-            >
-              Войти
-            </button>
+          {!adminMode && (
+            <div className="grid rounded-[1.5rem] bg-slate-100 p-1 sm:grid-cols-2">
+              <button
+                onClick={() => switchMode("login")}
+                className={`rounded-[1.25rem] px-5 py-3 text-sm font-semibold transition ${
+                  mode === "login"
+                    ? "bg-white text-slate-950 shadow-sm"
+                    : "text-slate-500 hover:text-slate-950"
+                }`}
+              >
+                Войти
+              </button>
 
-            <button
-              onClick={() => switchMode("register")}
-              className={`rounded-[1.25rem] px-5 py-3 text-sm font-semibold transition ${
-                mode === "register"
-                  ? "bg-white text-slate-950 shadow-sm"
-                  : "text-slate-500 hover:text-slate-950"
-              }`}
-            >
-              Создать аккаунт
-            </button>
-          </div>
+              <button
+                onClick={() => switchMode("register")}
+                className={`rounded-[1.25rem] px-5 py-3 text-sm font-semibold transition ${
+                  mode === "register"
+                    ? "bg-white text-slate-950 shadow-sm"
+                    : "text-slate-500 hover:text-slate-950"
+                }`}
+              >
+                Регистрация
+              </button>
+            </div>
+          )}
 
           <div className="mt-8">
             <h2 className="text-2xl font-bold tracking-tight text-slate-950">
               {adminMode
                 ? "Вход администратора"
                 : mode === "login"
-                  ? "Добро пожаловать"
+                  ? "Вход"
                   : "Создание аккаунта"}
             </h2>
 
@@ -456,7 +457,7 @@ export default function LoginPage() {
                 ? "Введите admin email, пароль и код доступа."
                 : mode === "login"
                   ? "Выберите роль и введите данные аккаунта."
-                  : "Админ-аккаунты не создаются через регистрацию."}
+                  : "Публичная регистрация доступна только для соискателей и работодателей."}
             </p>
 
             {!adminMode && (
@@ -468,7 +469,10 @@ export default function LoginPage() {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => switchRole(item.id)}
+                      onClick={() => {
+                        resetMessages();
+                        setRole(item.id);
+                      }}
                       className={`flex items-start gap-4 rounded-2xl border p-4 text-left transition ${
                         active
                           ? "border-blue-200 bg-blue-50"
@@ -508,6 +512,7 @@ export default function LoginPage() {
                 <span className="text-sm font-medium text-slate-700">
                   {role === "employer" ? "Название компании" : "Полное имя"}
                 </span>
+
                 <input
                   value={role === "employer" ? companyName : name}
                   onChange={(event) =>
@@ -528,13 +533,12 @@ export default function LoginPage() {
                 <span className="text-sm font-medium text-slate-700">
                   Email
                 </span>
+
                 <input
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  placeholder={
-                    adminMode ? ADMIN_EMAIL : "name@mail.kz"
-                  }
+                  placeholder={adminMode ? ADMIN_EMAIL : "name@mail.kz"}
                   className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-300"
                 />
               </label>
@@ -543,6 +547,7 @@ export default function LoginPage() {
                 <span className="text-sm font-medium text-slate-700">
                   Пароль
                 </span>
+
                 <input
                   type="password"
                   value={password}
@@ -558,6 +563,7 @@ export default function LoginPage() {
                 <span className="text-sm font-medium text-slate-700">
                   Admin access code
                 </span>
+
                 <input
                   value={adminCode}
                   onChange={(event) => setAdminCode(event.target.value)}
@@ -586,7 +592,7 @@ export default function LoginPage() {
               {adminMode
                 ? "Войти как администратор"
                 : mode === "login"
-                  ? "Продолжить"
+                  ? "Войти"
                   : "Создать аккаунт"}
               <ArrowRight className="h-4 w-4" />
             </button>
@@ -597,7 +603,7 @@ export default function LoginPage() {
                   {adminMode ? (
                     <ShieldCheck className="h-5 w-5" />
                   ) : (
-                    <SelectedIcon className="h-5 w-5" />
+                    <selectedRole.icon className="h-5 w-5" />
                   )}
                 </div>
 
@@ -605,8 +611,9 @@ export default function LoginPage() {
                   <div className="text-sm font-semibold text-slate-950">
                     {adminMode
                       ? "Административный доступ"
-                      : `Выбранный кабинет: ${selectedRole.title}`}
+                      : `Выбранная роль: ${selectedRole.title}`}
                   </div>
+
                   <p className="mt-1 text-sm leading-6 text-slate-500">
                     {adminMode
                       ? "Админ может модерировать работодателей и вакансии."
