@@ -150,6 +150,23 @@ function getPreferredType(candidate: Candidate) {
   return employmentLabels[value] || value || "Тип работы не указан";
 }
 
+
+const PUBLIC_CANDIDATES_KEY = "mj_public_candidates";
+
+function readPublicCandidates(): Candidate[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = localStorage.getItem(PUBLIC_CANDIDATES_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function WorkersPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -166,13 +183,24 @@ export default function WorkersPage() {
     setLoading(true);
 
     try {
+      const localCandidates = readPublicCandidates();
+
       const res = await fetch("/api/candidates");
       const data = await res.json();
-      const list = extractArray<Candidate>(data, ["candidates"]);
+      const apiCandidates = extractArray<Candidate>(data, ["candidates"]);
 
-      setCandidates(list.length > 0 ? list : fallbackCandidates);
+      const merged = [
+        ...localCandidates,
+        ...apiCandidates.filter(
+          (apiCandidate) =>
+            !localCandidates.some((local) => local.id === apiCandidate.id)
+        ),
+      ];
+
+      setCandidates(merged.length > 0 ? merged : fallbackCandidates);
     } catch {
-      setCandidates(fallbackCandidates);
+      const localCandidates = readPublicCandidates();
+      setCandidates(localCandidates.length > 0 ? localCandidates : fallbackCandidates);
     } finally {
       setLoading(false);
     }

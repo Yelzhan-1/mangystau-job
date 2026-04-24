@@ -175,6 +175,92 @@ function getJobAge(createdAt?: string) {
   return `${days} дн. назад`;
 }
 
+
+const JOBS_KEY = "mj_jobs";
+
+function readLocalJobs(): Job[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = localStorage.getItem(JOBS_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as Job[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+const fallbackJobs = [
+  {
+    id: "fallback-job-1",
+    title: "Официант / Официантка",
+    description: "Работа в кафе рядом с домом. Можно без опыта, главное — ответственность и пунктуальность.",
+    sector: "Общественное питание",
+    experienceLevel: "NO_EXPERIENCE",
+    employmentType: "PART_TIME",
+    city: "Актау",
+    district: "Микрорайон 7",
+    salaryMin: 90000,
+    salaryMax: 130000,
+    skills: "Ответственность, Коммуникабельность, Пунктуальность, Работа с клиентами",
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    employer: {
+      id: "fallback-employer-1",
+      companyName: "Кафе «Каспий»",
+    },
+    _count: {
+      applications: 1,
+    },
+  },
+  {
+    id: "fallback-job-2",
+    title: "Курьер-доставщик",
+    description: "Доставка заказов по районам Актау. Подходит для студентов и молодых специалистов.",
+    sector: "Доставка",
+    experienceLevel: "NO_EXPERIENCE",
+    employmentType: "PART_TIME",
+    city: "Актау",
+    district: "Микрорайон 12",
+    salaryMin: 80000,
+    salaryMax: 150000,
+    skills: "Знание города, Ответственность, Пунктуальность",
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    employer: {
+      id: "fallback-employer-2",
+      companyName: "Caspian Logistics",
+    },
+    _count: {
+      applications: 0,
+    },
+  },
+  {
+    id: "fallback-job-3",
+    title: "Оператор склада",
+    description: "Работа на складе в промзоне. Нужны внимательность и физическая выносливость.",
+    sector: "Логистика",
+    experienceLevel: "JUNIOR",
+    employmentType: "FULL_TIME",
+    city: "Актау",
+    district: "Промзона",
+    salaryMin: 120000,
+    salaryMax: 180000,
+    skills: "Физическая выносливость, Ответственность, Внимательность",
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    employer: {
+      id: "fallback-employer-3",
+      companyName: "Aktau Supply",
+    },
+    _count: {
+      applications: 0,
+    },
+  },
+] as Job[];
+
 export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -231,13 +317,56 @@ export default function JobsPage() {
       if (employmentType) params.set("employmentType", employmentType);
       if (experienceLevel) params.set("experienceLevel", experienceLevel);
 
+      const localJobs = readLocalJobs();
+
+      const filteredLocalJobs = localJobs.filter((job) => {
+        const query = search.trim().toLowerCase();
+
+        const matchesSearch =
+          !query ||
+          job.title?.toLowerCase().includes(query) ||
+          job.description?.toLowerCase().includes(query) ||
+          job.sector?.toLowerCase().includes(query) ||
+          job.district?.toLowerCase().includes(query) ||
+          job.employer?.companyName?.toLowerCase().includes(query);
+
+        const matchesSector =
+          !sector || sector === "Все сферы" || job.sector === sector;
+
+        const matchesDistrict =
+          !district || district === "Все районы" || job.district === district;
+
+        const matchesEmployment =
+          !employmentType || job.employmentType === employmentType;
+
+        const matchesExperience =
+          !experienceLevel || job.experienceLevel === experienceLevel;
+
+        return (
+          matchesSearch &&
+          matchesSector &&
+          matchesDistrict &&
+          matchesEmployment &&
+          matchesExperience
+        );
+      });
+
       const res = await fetch(`/api/jobs?${params.toString()}`);
       const data = await res.json();
-      const list = Array.isArray(data) ? data : data.jobs || data.data || [];
+      const apiJobs = Array.isArray(data) ? data : data.jobs || data.data || [];
 
-      setJobs(list);
+      const merged = [
+        ...filteredLocalJobs,
+        ...apiJobs.filter(
+          (apiJob: Job) =>
+            !filteredLocalJobs.some((localJob) => localJob.id === apiJob.id)
+        ),
+      ];
+
+      setJobs(merged.length > 0 ? merged : fallbackJobs);
     } catch {
-      setJobs([]);
+      const localJobs = readLocalJobs();
+      setJobs(localJobs.length > 0 ? localJobs : fallbackJobs);
     } finally {
       setLoading(false);
     }

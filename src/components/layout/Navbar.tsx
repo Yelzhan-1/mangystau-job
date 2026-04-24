@@ -6,6 +6,7 @@ import {
   BriefcaseBusiness,
   LogOut,
   MapPin,
+  Sparkles,
   UserCircle2,
   UserPlus,
 } from "lucide-react";
@@ -107,6 +108,25 @@ export function Navbar() {
               {link.label}
             </Link>
           ))}
+
+          {session && (
+            <Link
+              href="/ai-match"
+              className="inline-flex items-center gap-1 text-sm font-semibold text-slate-950 transition hover:text-blue-600"
+            >
+              <Sparkles className="h-4 w-4" />
+              Подбор
+            </Link>
+          )}
+
+          {session && (session.role === "employer" || session.role === "admin") && (
+            <Link
+              href="/dashboard"
+              className="text-sm font-semibold text-slate-950 transition hover:text-blue-600"
+            >
+              Отклики
+            </Link>
+          )}
 
           {session && (
             <Link

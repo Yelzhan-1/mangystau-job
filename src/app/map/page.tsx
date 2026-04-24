@@ -33,6 +33,22 @@ type Job = {
   employer?: Employer;
 };
 
+const JOBS_KEY = "mj_jobs";
+
+function readLocalJobs(): Job[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = localStorage.getItem(JOBS_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 const JobMap = dynamic<any>(
   () =>
     import("@/components/map/JobMap").then((mod: any) => {
@@ -140,13 +156,23 @@ export default function MapPage() {
     setLoading(true);
 
     try {
+      const localJobs = readLocalJobs();
+
       const res = await fetch("/api/jobs");
       const data = await res.json();
-      const list = extractArray<Job>(data, ["jobs"]);
+      const apiJobs = extractArray<Job>(data, ["jobs"]);
 
-      setJobs(list.length > 0 ? list : fallbackJobs);
+      const merged = [
+        ...localJobs,
+        ...apiJobs.filter(
+          (apiJob) => !localJobs.some((localJob) => localJob.id === apiJob.id)
+        ),
+      ];
+
+      setJobs(merged.length > 0 ? merged : fallbackJobs);
     } catch {
-      setJobs(fallbackJobs);
+      const localJobs = readLocalJobs();
+      setJobs(localJobs.length > 0 ? localJobs : fallbackJobs);
     } finally {
       setLoading(false);
     }

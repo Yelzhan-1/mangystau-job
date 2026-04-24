@@ -1,23 +1,28 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type { ComponentType } from "react";
-import type { LucideIcon } from "lucide-react";
 import {
   ArrowRight,
-  BarChart3,
+  BriefcaseBusiness,
   Building2,
   CheckCircle2,
   Loader2,
   MapPin,
-  Search,
   Sparkles,
   Target,
   UserRound,
-  XCircle,
 } from "lucide-react";
+
+type Role = "candidate" | "employer" | "admin";
+
+type Session = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  createdAt: string;
+};
 
 type User = {
   id: string;
@@ -29,15 +34,16 @@ type User = {
 type Employer = {
   id: string;
   companyName: string;
-  businessType?: string | null;
+  userId?: string;
   city?: string | null;
   district?: string | null;
-  user?: User;
+  isVerified?: boolean;
 };
 
 type Candidate = {
   id: string;
   userId?: string;
+  user?: User;
   bio?: string | null;
   city?: string | null;
   district?: string | null;
@@ -46,7 +52,9 @@ type Candidate = {
   preferredType?: string | null;
   preferredJobType?: string | null;
   sector?: string | null;
-  user?: User;
+  expectedSalaryMin?: number | null;
+  expectedSalaryMax?: number | null;
+  isAvailable?: boolean;
 };
 
 type Job = {
@@ -61,73 +69,40 @@ type Job = {
   salaryMin?: number | null;
   salaryMax?: number | null;
   skills?: string | null;
+  isActive?: boolean;
+  createdAt?: string;
   employer?: Employer;
+  _count?: {
+    applications?: number;
+  };
 };
 
 type Breakdown = {
-  skills?: number;
-  location?: number;
-  employmentType?: number;
-  experience?: number;
-  sector?: number;
-  salary?: number;
+  skills: number;
+  location: number;
+  employmentType: number;
+  experience: number;
+  sector: number;
+  salary: number;
 };
 
 type JobMatch = {
   job: Job;
   score: number;
-  reasons?: string[];
-  weakPoints?: string[];
-  breakdown?: Breakdown;
-  explanation?: string;
+  breakdown: Breakdown;
+  reasons: string[];
 };
 
 type CandidateMatch = {
   candidate: Candidate;
   score: number;
-  reasons?: string[];
-  weakPoints?: string[];
-  breakdown?: Breakdown;
-  explanation?: string;
+  breakdown: Breakdown;
+  reasons: string[];
 };
 
-type Summary = {
-  totalJobs?: number;
-  totalCandidates?: number;
-  totalEmployers?: number;
-  strongestSectors?: unknown;
-  districtsWithMostJobs?: unknown;
-  mostCommonSkills?: unknown;
-  insight?: string;
-  insightText?: string;
-};
-
-const JobMap = dynamic(
-  () =>
-    import("@/components/map/JobMap").then(
-      (mod: any) => mod.JobMap || mod.default
-    ),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-[340px] items-center justify-center rounded-[1.5rem] border border-slate-200 bg-white">
-        <div className="flex items-center gap-3 text-sm text-slate-500">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Загружаем карту...
-        </div>
-      </div>
-    ),
-  }
-) as ComponentType<{ jobs: Job[]; height?: string; className?: string }>;
-
-const breakdownLabels: Record<keyof Breakdown, string> = {
-  skills: "Навыки",
-  location: "Локация",
-  employmentType: "Тип работы",
-  experience: "Опыт",
-  sector: "Сфера",
-  salary: "Зарплата",
-};
+const SESSION_KEY = "mj_session";
+const JOBS_KEY = "mj_jobs";
+const PUBLIC_CANDIDATES_KEY = "mj_public_candidates";
 
 const employmentLabels: Record<string, string> = {
   FULL_TIME: "Полная занятость",
@@ -144,6 +119,116 @@ const experienceLabels: Record<string, string> = {
   SENIOR: "Опытный",
 };
 
+const fallbackJobs: Job[] = [
+  {
+    id: "fallback-job-1",
+    title: "Официант / Официантка",
+    description:
+      "Работа в кафе рядом с домом. Можно без опыта, главное — ответственность и пунктуальность.",
+    sector: "Общественное питание",
+    experienceLevel: "NO_EXPERIENCE",
+    employmentType: "PART_TIME",
+    city: "Актау",
+    district: "Микрорайон 7",
+    salaryMin: 90000,
+    salaryMax: 130000,
+    skills: "Ответственность, Коммуникабельность, Пунктуальность, Работа с клиентами",
+    employer: {
+      id: "fallback-employer-1",
+      companyName: "Кафе «Каспий»",
+      isVerified: true,
+    },
+    _count: {
+      applications: 1,
+    },
+  },
+  {
+    id: "fallback-job-2",
+    title: "Курьер-доставщик",
+    description:
+      "Доставка заказов по районам Актау. Подходит для студентов и молодых специалистов.",
+    sector: "Доставка",
+    experienceLevel: "NO_EXPERIENCE",
+    employmentType: "PART_TIME",
+    city: "Актау",
+    district: "Микрорайон 12",
+    salaryMin: 80000,
+    salaryMax: 150000,
+    skills: "Знание города, Ответственность, Пунктуальность",
+    employer: {
+      id: "fallback-employer-2",
+      companyName: "Caspian Logistics",
+      isVerified: true,
+    },
+    _count: {
+      applications: 0,
+    },
+  },
+  {
+    id: "fallback-job-3",
+    title: "Оператор склада",
+    description:
+      "Работа на складе в промзоне. Нужны внимательность и физическая выносливость.",
+    sector: "Логистика",
+    experienceLevel: "JUNIOR",
+    employmentType: "FULL_TIME",
+    city: "Актау",
+    district: "Промзона",
+    salaryMin: 120000,
+    salaryMax: 180000,
+    skills: "Физическая выносливость, Ответственность, Внимательность",
+    employer: {
+      id: "fallback-employer-3",
+      companyName: "Aktau Supply",
+      isVerified: true,
+    },
+    _count: {
+      applications: 0,
+    },
+  },
+];
+
+const fallbackCandidates: Candidate[] = [
+  {
+    id: "fallback-candidate-1",
+    user: {
+      id: "fallback-user-1",
+      name: "Айбек Джаксыбеков",
+      email: "candidate@mangystaujobs.kz",
+      phone: "+7 705 111 2233",
+    },
+    city: "Актау",
+    district: "Микрорайон 7",
+    experienceLevel: "NO_EXPERIENCE",
+    preferredJobType: "PART_TIME",
+    preferredType: "PART_TIME",
+    expectedSalaryMin: 70000,
+    expectedSalaryMax: 150000,
+    skills: "Ответственность, Коммуникабельность, Пунктуальность, Работа с клиентами",
+    bio: "Ищу подработку рядом с домом после учебы.",
+    isAvailable: true,
+  },
+  {
+    id: "fallback-candidate-2",
+    user: {
+      id: "fallback-user-2",
+      name: "Дамир Сатыбалдиев",
+      email: "damir@mail.kz",
+      phone: "+7 708 333 4455",
+    },
+    city: "Актау",
+    district: "Микрорайон 12",
+    experienceLevel: "JUNIOR",
+    preferredJobType: "FULL_TIME",
+    preferredType: "FULL_TIME",
+    expectedSalaryMin: 100000,
+    expectedSalaryMax: 200000,
+    skills: "Знание города, Водительские права кат. B, Ответственность, Физическая выносливость",
+    bio: "Готов работать курьером или помощником на складе.",
+    isAvailable: true,
+  },
+];
+
 const weights = [
   { label: "Навыки", value: "35%" },
   { label: "Локация", value: "20%" },
@@ -153,14 +238,49 @@ const weights = [
   { label: "Зарплата", value: "10%" },
 ];
 
-function extractArray<T>(data: any, keys: string[] = []): T[] {
-  if (Array.isArray(data)) return data;
+function readSession(): Session | null {
+  if (typeof window === "undefined") return null;
 
-  for (const key of ["matches", "results", "data", ...keys]) {
-    if (Array.isArray(data?.[key])) return data[key];
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+
+    if (!parsed?.email || !parsed?.role) return null;
+
+    return parsed;
+  } catch {
+    return null;
   }
+}
 
-  return [];
+function readArray<T>(key: string): T[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function readCandidateProfile(sessionId: string): Candidate | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = localStorage.getItem(`mj_candidate_profile_${sessionId}`);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 function parseSkills(value?: string | null) {
@@ -168,9 +288,11 @@ function parseSkills(value?: string | null) {
 
   try {
     const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+    if (Array.isArray(parsed)) {
+      return parsed.map(String).map((item) => item.trim()).filter(Boolean);
+    }
   } catch {
-    // fallback below
+    // normal comma text
   }
 
   return value
@@ -191,53 +313,11 @@ function formatSalary(min?: number | null, max?: number | null) {
   return `до ${max?.toLocaleString("ru-RU")} ₸`;
 }
 
-function getTopValue(value: unknown, fallback: string) {
-  if (!value) return fallback;
-
-  if (typeof value === "string") return value;
-
-  if (Array.isArray(value)) {
-    const first = value[0];
-
-    if (!first) return fallback;
-
-    if (typeof first === "string") return first;
-
-    if (typeof first === "object") {
-      const item = first as Record<string, any>;
-
-      return (
-        item.name ||
-        item.sector ||
-        item.district ||
-        item.skill ||
-        item.label ||
-        item.title ||
-        fallback
-      );
-    }
-  }
-
-  if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-
-    if (entries.length > 0) {
-      const sorted = entries.sort(
-        (a, b) => Number(b[1] || 0) - Number(a[1] || 0)
-      );
-
-      return sorted[0]?.[0] || fallback;
-    }
-  }
-
-  return fallback;
-}
-
 function getCandidateName(candidate?: Candidate) {
   return candidate?.user?.name || "Кандидат";
 }
 
-function getCompanyName(job?: Job) {
+function getEmployerName(job?: Job) {
   return job?.employer?.companyName || "Компания";
 }
 
@@ -246,412 +326,294 @@ function getPreferredType(candidate?: Candidate) {
   return employmentLabels[value] || value || "Тип работы не указан";
 }
 
-function getScoreStyle(score: number) {
-  if (score >= 80) return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (score >= 55) return "border-blue-200 bg-blue-50 text-blue-700";
-  return "border-amber-200 bg-amber-50 text-amber-700";
+function getCommonSkills(a?: string | null, b?: string | null) {
+  const first = parseSkills(a).map((item) => item.toLowerCase());
+  const second = parseSkills(b).map((item) => item.toLowerCase());
+
+  return first.filter((skill) => second.includes(skill));
 }
 
-function ScoreBadge({ score }: { score: number }) {
-  return (
-    <div
-      className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border text-xl font-bold ${getScoreStyle(
-        score
-      )}`}
-    >
-      {score}%
-    </div>
+function createBreakdownForCandidate(job: Job, candidate: Candidate): Breakdown {
+  const jobSkills = parseSkills(job.skills);
+  const candidateSkills = parseSkills(candidate.skills);
+  const common = getCommonSkills(candidate.skills, job.skills);
+
+  const skills =
+    jobSkills.length === 0
+      ? 15
+      : Math.round((common.length / Math.max(jobSkills.length, 1)) * 35);
+
+  const location =
+    candidate.district && job.district && candidate.district === job.district
+      ? 20
+      : candidate.city && job.city && candidate.city === job.city
+        ? 10
+        : 0;
+
+  const candidateType = candidate.preferredJobType || candidate.preferredType;
+  const employmentType =
+    candidateType && job.employmentType && candidateType === job.employmentType
+      ? 15
+      : 5;
+
+  const experience =
+    !job.experienceLevel ||
+    job.experienceLevel === "NO_EXPERIENCE" ||
+    job.experienceLevel === candidate.experienceLevel
+      ? 10
+      : 4;
+
+  const sector = !candidate.sector || !job.sector || candidate.sector === job.sector ? 8 : 3;
+
+  const expectedMin = candidate.expectedSalaryMin || 0;
+  const expectedMax = candidate.expectedSalaryMax || 999999999;
+  const salaryMin = job.salaryMin || 0;
+  const salaryMax = job.salaryMax || 999999999;
+
+  const salary = salaryMax >= expectedMin && salaryMin <= expectedMax ? 10 : 3;
+
+  return {
+    skills: Math.min(skills, 35),
+    location,
+    employmentType,
+    experience,
+    sector,
+    salary,
+  };
+}
+
+function createBreakdownForEmployer(job: Job, candidate: Candidate): Breakdown {
+  return createBreakdownForCandidate(job, candidate);
+}
+
+function sumBreakdown(breakdown: Breakdown) {
+  return Math.min(
+    100,
+    breakdown.skills +
+      breakdown.location +
+      breakdown.employmentType +
+      breakdown.experience +
+      breakdown.sector +
+      breakdown.salary
   );
 }
 
-function SummaryCard({
-  label,
-  value,
-  loading,
-}: {
-  label: string;
-  value: number;
-  loading: boolean;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center">
-      <div className="text-2xl font-bold text-slate-950">
-        {loading ? "—" : value}
-      </div>
-      <div className="mt-1 text-xs font-medium text-slate-500">{label}</div>
-    </div>
-  );
+function createJobMatch(job: Job, candidate: Candidate): JobMatch {
+  const breakdown = createBreakdownForCandidate(job, candidate);
+  const common = getCommonSkills(candidate.skills, job.skills);
+  const score = sumBreakdown(breakdown);
+
+  const reasons = [
+    common.length > 0
+      ? `Совпадающие навыки: ${common.slice(0, 3).join(", ")}`
+      : "Навыки частично подходят, но может потребоваться обучение.",
+    candidate.district === job.district
+      ? "Работа находится в том же районе."
+      : "Локация отличается, но вакансия может быть подходящей.",
+    (candidate.preferredJobType || candidate.preferredType) === job.employmentType
+      ? "Тип занятости совпадает с предпочтением."
+      : "Тип занятости отличается от предпочтения.",
+  ];
+
+  return {
+    job,
+    score,
+    breakdown,
+    reasons,
+  };
 }
 
-function InsightCard({
-  icon: Icon,
-  title,
-  value,
-}: {
-  icon: LucideIcon;
-  title: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <Icon className="h-5 w-5 text-blue-600" />
-      <div className="mt-4 text-sm text-slate-500">{title}</div>
-      <div className="mt-1 text-lg font-semibold text-slate-950">{value}</div>
-    </div>
-  );
-}
+function createCandidateMatch(job: Job, candidate: Candidate): CandidateMatch {
+  const breakdown = createBreakdownForEmployer(job, candidate);
+  const common = getCommonSkills(candidate.skills, job.skills);
+  const score = sumBreakdown(breakdown);
 
-function BreakdownBars({ breakdown }: { breakdown?: Breakdown }) {
-  if (!breakdown) return null;
+  const reasons = [
+    common.length > 0
+      ? `Совпадающие навыки: ${common.slice(0, 3).join(", ")}`
+      : "Навыки частично подходят, но кандидату может понадобиться адаптация.",
+    candidate.district === job.district
+      ? "Кандидат находится в том же районе."
+      : "Район отличается, но кандидат может подойти.",
+    (candidate.preferredJobType || candidate.preferredType) === job.employmentType
+      ? "Предпочтительный формат работы совпадает."
+      : "Формат работы отличается от предпочтения кандидата.",
+  ];
 
-  const entries = Object.entries(breakdown).filter(
-    ([, value]) => typeof value === "number"
-  ) as [keyof Breakdown, number][];
-
-  if (entries.length === 0) return null;
-
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {entries.map(([key, value]) => (
-        <div key={key}>
-          <div className="mb-1 flex items-center justify-between text-xs">
-            <span className="font-medium text-slate-600">
-              {breakdownLabels[key]}
-            </span>
-            <span className="font-semibold text-slate-900">
-              {Math.round(value)}%
-            </span>
-          </div>
-
-          <div className="h-2 rounded-full bg-slate-100">
-            <div
-              className="h-2 rounded-full bg-blue-600"
-              style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ReasonsList({
-  title,
-  items,
-  type,
-}: {
-  title: string;
-  items?: string[];
-  type: "good" | "weak";
-}) {
-  if (!items || items.length === 0) return null;
-
-  const Icon = type === "good" ? CheckCircle2 : XCircle;
-
-  return (
-    <div>
-      <div className="mb-3 text-sm font-semibold text-slate-950">{title}</div>
-
-      <div className="space-y-2">
-        {items.slice(0, 3).map((item) => (
-          <div
-            key={item}
-            className="flex gap-2 text-sm leading-6 text-slate-600"
-          >
-            <Icon
-              className={`mt-1 h-4 w-4 shrink-0 ${
-                type === "good" ? "text-emerald-600" : "text-amber-600"
-              }`}
-            />
-            <span>{item}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function EmptyState({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="rounded-[1.5rem] border border-slate-200 bg-white p-10 text-center shadow-sm">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-        <Sparkles className="h-6 w-6" />
-      </div>
-
-      <h3 className="mt-6 text-xl font-semibold text-slate-950">{title}</h3>
-
-      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-        {text}
-      </p>
-    </div>
-  );
+  return {
+    candidate,
+    score,
+    breakdown,
+    reasons,
+  };
 }
 
 export default function AiMatchPage() {
-  const [activeTab, setActiveTab] = useState<"candidate" | "employer">(
-    "candidate"
-  );
+  const [session, setSession] = useState<Session | null>(null);
+  const [checking, setChecking] = useState(true);
 
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [employers, setEmployers] = useState<Employer[]>([]);
-  const [employerJobs, setEmployerJobs] = useState<Job[]>([]);
-
-  const [selectedCandidateId, setSelectedCandidateId] = useState("");
-  const [selectedEmployerId, setSelectedEmployerId] = useState("");
+  const [candidateProfile, setCandidateProfile] = useState<Candidate | null>(null);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [publicCandidates, setPublicCandidates] = useState<Candidate[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
 
-  const [candidateMatches, setCandidateMatches] = useState<JobMatch[]>([]);
-  const [employerMatches, setEmployerMatches] = useState<CandidateMatch[]>([]);
-
-  const [loadingInitial, setLoadingInitial] = useState(true);
-  const [matchingLoading, setMatchingLoading] = useState(false);
-  const [error, setError] = useState("");
-
   useEffect(() => {
-    loadInitialData();
+    const current = readSession();
 
-    const params = new URLSearchParams(window.location.search);
-    const jobId = params.get("jobId");
-    const candidateId = params.get("candidateId");
-
-    if (jobId) {
-      setActiveTab("employer");
-      setSelectedJobId(jobId);
-      generateCandidateMatches(jobId);
+    if (!current) {
+      setChecking(false);
+      return;
     }
 
-    if (candidateId) {
-      setActiveTab("candidate");
-      setSelectedCandidateId(candidateId);
-      generateJobMatches(candidateId);
+    setSession(current);
+
+    const localJobs = readArray<Job>(JOBS_KEY);
+    setJobs(localJobs.length > 0 ? localJobs : fallbackJobs);
+
+    const candidates = readArray<Candidate>(PUBLIC_CANDIDATES_KEY);
+    setPublicCandidates(candidates.length > 0 ? candidates : fallbackCandidates);
+
+    if (current.role === "candidate") {
+      const profile = readCandidateProfile(current.id);
+      setCandidateProfile(profile);
     }
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (current.role === "employer") {
+      const companyJobs = localJobs.filter(
+        (job) => job.employer?.userId === current.id
+      );
+
+      setJobs(companyJobs);
+
+      if (companyJobs[0]?.id) {
+        setSelectedJobId(companyJobs[0].id);
+      }
+    }
+
+    setChecking(false);
   }, []);
 
-  useEffect(() => {
-    if (selectedEmployerId) {
-      loadEmployerJobs(selectedEmployerId);
-    }
+  const candidateMatches = useMemo(() => {
+    if (!candidateProfile) return [];
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedEmployerId]);
+    const allJobs = jobs.length > 0 ? jobs : fallbackJobs;
 
-  async function loadInitialData() {
-    setLoadingInitial(true);
+    return allJobs
+      .filter((job) => job.isActive !== false)
+      .map((job) => createJobMatch(job, candidateProfile))
+      .sort((a, b) => b.score - a.score);
+  }, [candidateProfile, jobs]);
 
-    try {
-      const [summaryRes, candidatesRes, employersRes] = await Promise.all([
-        fetch("/api/ai/summary"),
-        fetch("/api/candidates"),
-        fetch("/api/employers"),
-      ]);
+  const selectedJob = useMemo(() => {
+    return jobs.find((job) => job.id === selectedJobId) || jobs[0];
+  }, [jobs, selectedJobId]);
 
-      const [summaryData, candidatesData, employersData] = await Promise.all([
-        summaryRes.json(),
-        candidatesRes.json(),
-        employersRes.json(),
-      ]);
+  const employerMatches = useMemo(() => {
+    if (!selectedJob) return [];
 
-      const candidateList = extractArray<Candidate>(candidatesData, [
-        "candidates",
-      ]);
+    const candidates =
+      publicCandidates.length > 0 ? publicCandidates : fallbackCandidates;
 
-      const employerList = extractArray<Employer>(employersData, ["employers"]);
+    return candidates
+      .filter((candidate) => candidate.isAvailable !== false)
+      .map((candidate) => createCandidateMatch(selectedJob, candidate))
+      .sort((a, b) => b.score - a.score);
+  }, [selectedJob, publicCandidates]);
 
-      setSummary(summaryData);
-      setCandidates(candidateList);
-      setEmployers(employerList);
-
-      if (!selectedCandidateId && candidateList[0]?.id) {
-        setSelectedCandidateId(candidateList[0].id);
-      }
-
-      if (!selectedEmployerId && employerList[0]?.id) {
-        setSelectedEmployerId(employerList[0].id);
-      }
-    } catch {
-      setError("Не удалось загрузить данные для подбора.");
-    } finally {
-      setLoadingInitial(false);
-    }
+  if (checking) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="flex items-center gap-3 text-slate-500">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Загружаем подбор...
+        </div>
+      </main>
+    );
   }
 
-  async function loadEmployerJobs(employerId: string) {
-    try {
-      const res = await fetch(`/api/jobs?employerId=${employerId}`);
-      const data = await res.json();
-      const list = extractArray<Job>(data, ["jobs"]);
+  if (!session) {
+    return (
+      <main className="min-h-screen bg-slate-50 text-slate-950">
+        <section className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
+          <div className="max-w-2xl">
+            <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
+              <Sparkles className="h-4 w-4" />
+              Умный подбор
+            </div>
 
-      setEmployerJobs(list);
+            <h1 className="mt-5 text-5xl font-bold tracking-tight text-slate-950">
+              Войдите, чтобы использовать подбор
+            </h1>
 
-      if (!selectedJobId && list[0]?.id) {
-        setSelectedJobId(list[0].id);
-      }
-    } catch {
-      setEmployerJobs([]);
-    }
+            <p className="mt-5 text-lg leading-8 text-slate-600">
+              Подбор работает по вашему профилю. Соискатель получает подходящие
+              вакансии, а работодатель — подходящих кандидатов.
+            </p>
+
+            <div className="mt-8 flex gap-3">
+              <Link
+                href="/login?mode=login"
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+              >
+                Войти
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+
+              <Link
+                href="/login?mode=register"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Регистрация
+              </Link>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
   }
 
-  async function generateJobMatches(candidateId = selectedCandidateId) {
-    if (!candidateId) {
-      setError("Выберите профиль соискателя.");
-      return;
-    }
-
-    setError("");
-    setMatchingLoading(true);
-
-    try {
-      const res = await fetch(
-        `/api/ai/jobs-for-candidate?candidateId=${candidateId}`
-      );
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || data.message || "Не удалось выполнить подбор.");
-        return;
-      }
-
-      setCandidateMatches(extractArray<JobMatch>(data, ["jobMatches"]));
-    } catch {
-      setError("Ошибка соединения при подборе вакансий.");
-    } finally {
-      setMatchingLoading(false);
-    }
-  }
-
-  async function generateCandidateMatches(jobId = selectedJobId) {
-    if (!jobId) {
-      setError("Выберите вакансию.");
-      return;
-    }
-
-    setError("");
-    setMatchingLoading(true);
-
-    try {
-      const res = await fetch(`/api/ai/candidates-for-job?jobId=${jobId}`);
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || data.message || "Не удалось выполнить подбор.");
-        return;
-      }
-
-      setEmployerMatches(
-        extractArray<CandidateMatch>(data, ["candidateMatches"])
-      );
-    } catch {
-      setError("Ошибка соединения при подборе кандидатов.");
-    } finally {
-      setMatchingLoading(false);
-    }
-  }
-
-  const selectedCandidate = useMemo(
-    () => candidates.find((candidate) => candidate.id === selectedCandidateId),
-    [candidates, selectedCandidateId]
-  );
-
-  const selectedJob = useMemo(
-    () => employerJobs.find((job) => job.id === selectedJobId),
-    [employerJobs, selectedJobId]
-  );
-
-  const topJobsForMap = useMemo(
-    () =>
-      candidateMatches
-        .map((match) => match.job)
-        .filter(Boolean)
-        .slice(0, 5),
-    [candidateMatches]
-  );
+  const isCandidate = session.role === "candidate";
+  const isEmployer = session.role === "employer";
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-950">
       <section className="border-b border-slate-200 bg-white">
         <div className="mx-auto max-w-7xl px-6 py-12 lg:px-8">
-          <div className="flex flex-col justify-between gap-8 lg:flex-row lg:items-end">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
-                <Sparkles className="h-4 w-4" />
-                Умный подбор вакансий и кандидатов
-              </div>
+          <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
+            <Sparkles className="h-4 w-4" />
+            Подбор по текущему аккаунту
+          </div>
 
-              <h1 className="mt-5 text-4xl font-bold tracking-tight text-slate-950 sm:text-5xl">
-                Подбор, который можно объяснить
+          <div className="mt-5 flex flex-col justify-between gap-8 lg:flex-row lg:items-end">
+            <div>
+              <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-slate-950 sm:text-5xl">
+                {isCandidate
+                  ? "Вакансии, которые подходят именно вам"
+                  : isEmployer
+                    ? "Кандидаты для ваших вакансий"
+                    : "Панель подбора"}
               </h1>
 
               <p className="mt-4 max-w-2xl text-lg leading-8 text-slate-600">
-                Платформа сравнивает вакансии и кандидатов по навыкам, району,
-                типу работы, опыту, сфере и зарплате — и показывает понятный
-                match score.
+                {isCandidate
+                  ? "Система сравнивает ваш профиль с вакансиями по навыкам, району, опыту, типу работы и зарплате."
+                  : isEmployer
+                    ? "Система сравнивает кандидатов с вашими вакансиями и объясняет, почему они подходят."
+                    : "Администратор может просматривать работу подбора со стороны продукта."}
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 lg:w-[420px]">
-              <SummaryCard
-                label="Вакансии"
-                value={summary?.totalJobs ?? 0}
-                loading={loadingInitial}
-              />
-              <SummaryCard
-                label="Кандидаты"
-                value={summary?.totalCandidates ?? 0}
-                loading={loadingInitial}
-              />
-              <SummaryCard
-                label="Компании"
-                value={summary?.totalEmployers ?? 0}
-                loading={loadingInitial}
-              />
+            <div className="grid grid-cols-3 gap-3 sm:w-[420px]">
+              <Stat label="Навыки" value="35%" />
+              <Stat label="Локация" value="20%" />
+              <Stat label="Остальное" value="45%" />
             </div>
-          </div>
-
-          <div className="mt-10 grid gap-4 md:grid-cols-3">
-            <InsightCard
-              icon={BarChart3}
-              title="Активная сфера"
-              value={getTopValue(
-                summary?.strongestSectors,
-                "Общественное питание"
-              )}
-            />
-
-            <InsightCard
-              icon={MapPin}
-              title="Активный район"
-              value={getTopValue(
-                summary?.districtsWithMostJobs,
-                "Микрорайон 7"
-              )}
-            />
-
-            <InsightCard
-              icon={Target}
-              title="Популярный навык"
-              value={getTopValue(
-                summary?.mostCommonSkills,
-                "Ответственность"
-              )}
-            />
-          </div>
-
-          <div className="mt-5 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5">
-            <p className="text-sm leading-6 text-slate-600">
-              {summary?.insight ||
-                summary?.insightText ||
-                "Платформа анализирует локальный рынок труда и помогает быстрее соединять подходящих кандидатов с актуальными вакансиями."}
-            </p>
           </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-6 py-10 lg:px-8">
-        <div className="mb-8 grid gap-4 md:grid-cols-6">
+      <section className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
+        <div className="grid gap-4 md:grid-cols-6">
           {weights.map((item) => (
             <div
               key={item.label}
@@ -660,280 +622,218 @@ export default function AiMatchPage() {
               <div className="text-sm font-semibold text-slate-950">
                 {item.label}
               </div>
-              <div className="mt-1 text-2xl font-bold text-blue-600">
+              <div className="mt-2 text-2xl font-bold text-blue-600">
                 {item.value}
               </div>
             </div>
           ))}
         </div>
-
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-2 shadow-sm">
-          <div className="grid rounded-[1.5rem] bg-slate-100 p-1 sm:grid-cols-2">
-            <button
-              onClick={() => setActiveTab("candidate")}
-              className={`rounded-[1.25rem] px-5 py-3 text-sm font-semibold transition ${
-                activeTab === "candidate"
-                  ? "bg-white text-slate-950 shadow-sm"
-                  : "text-slate-500 hover:text-slate-950"
-              }`}
-            >
-              Для соискателя
-            </button>
-
-            <button
-              onClick={() => setActiveTab("employer")}
-              className={`rounded-[1.25rem] px-5 py-3 text-sm font-semibold transition ${
-                activeTab === "employer"
-                  ? "bg-white text-slate-950 shadow-sm"
-                  : "text-slate-500 hover:text-slate-950"
-              }`}
-            >
-              Для работодателя
-            </button>
-          </div>
-
-          <div className="p-6 lg:p-8">
-            {error && (
-              <div className="mb-6 rounded-2xl bg-red-50 p-4 text-sm font-medium text-red-700">
-                {error}
-              </div>
-            )}
-
-            {activeTab === "candidate" ? (
-              <CandidateMatchSection
-                candidates={candidates}
-                selectedCandidateId={selectedCandidateId}
-                setSelectedCandidateId={setSelectedCandidateId}
-                selectedCandidate={selectedCandidate}
-                matches={candidateMatches}
-                loading={matchingLoading}
-                onGenerate={() => generateJobMatches()}
-                topJobsForMap={topJobsForMap}
-              />
-            ) : (
-              <EmployerMatchSection
-                employers={employers}
-                employerJobs={employerJobs}
-                selectedEmployerId={selectedEmployerId}
-                selectedJobId={selectedJobId}
-                setSelectedEmployerId={(id) => {
-                  setSelectedEmployerId(id);
-                  setSelectedJobId("");
-                  setEmployerMatches([]);
-                }}
-                setSelectedJobId={setSelectedJobId}
-                selectedJob={selectedJob}
-                matches={employerMatches}
-                loading={matchingLoading}
-                onGenerate={() => generateCandidateMatches()}
-              />
-            )}
-          </div>
-        </div>
       </section>
+
+      {isCandidate && (
+        <CandidateSection
+          session={session}
+          candidateProfile={candidateProfile}
+          matches={candidateMatches}
+        />
+      )}
+
+      {isEmployer && (
+        <EmployerSection
+          jobs={jobs}
+          selectedJob={selectedJob}
+          selectedJobId={selectedJobId}
+          setSelectedJobId={setSelectedJobId}
+          matches={employerMatches}
+        />
+      )}
+
+      {session.role === "admin" && (
+        <section className="mx-auto max-w-7xl px-6 py-10 lg:px-8">
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm">
+            <h2 className="text-2xl font-bold text-slate-950">
+              Администраторский доступ
+            </h2>
+            <p className="mt-3 text-slate-600">
+              Для проверки подбора войдите как соискатель или работодатель.
+            </p>
+            <Link
+              href="/admin"
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-600"
+            >
+              Открыть админку
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </section>
+      )}
     </main>
   );
 }
 
-function CandidateMatchSection({
-  candidates,
-  selectedCandidateId,
-  setSelectedCandidateId,
-  selectedCandidate,
+function CandidateSection({
+  session,
+  candidateProfile,
   matches,
-  loading,
-  onGenerate,
-  topJobsForMap,
 }: {
-  candidates: Candidate[];
-  selectedCandidateId: string;
-  setSelectedCandidateId: (value: string) => void;
-  selectedCandidate?: Candidate;
+  session: Session;
+  candidateProfile: Candidate | null;
   matches: JobMatch[];
-  loading: boolean;
-  onGenerate: () => void;
-  topJobsForMap: Job[];
 }) {
+  if (!candidateProfile) {
+    return (
+      <section className="mx-auto max-w-7xl px-6 py-10 lg:px-8">
+        <div className="rounded-[2rem] border border-slate-200 bg-white p-10 text-center shadow-sm">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+            <UserRound className="h-6 w-6" />
+          </div>
+
+          <h2 className="mt-6 text-2xl font-bold text-slate-950">
+            Сначала создайте профиль
+          </h2>
+
+          <p className="mx-auto mt-3 max-w-xl text-base leading-7 text-slate-600">
+            {session.name}, чтобы подобрать вакансии, системе нужны ваш район,
+            навыки, опыт и желаемый формат работы.
+          </p>
+
+          <Link
+            href="/candidate"
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+          >
+            Заполнить профиль
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <div className="grid gap-8 lg:grid-cols-[340px_1fr]">
-      <aside className="h-fit rounded-[1.5rem] border border-slate-200 bg-slate-50 p-6">
+    <section className="mx-auto grid max-w-7xl gap-8 px-6 py-10 lg:grid-cols-[360px_1fr] lg:px-8">
+      <aside className="h-fit rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-24">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white">
           <UserRound className="h-5 w-5" />
         </div>
 
-        <h2 className="mt-5 text-2xl font-bold tracking-tight text-slate-950">
-          Подбор вакансий
+        <h2 className="mt-5 text-2xl font-bold text-slate-950">
+          Ваш профиль
         </h2>
 
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          Выберите профиль соискателя, чтобы увидеть лучшие предложения рядом.
-        </p>
-
-        <label className="mt-6 block">
-          <span className="text-sm font-medium text-slate-700">Профиль</span>
-
-          <select
-            value={selectedCandidateId}
-            onChange={(e) => setSelectedCandidateId(e.target.value)}
-            className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300"
-          >
-            {candidates.map((candidate) => (
-              <option key={candidate.id} value={candidate.id}>
-                {getCandidateName(candidate)} ·{" "}
-                {candidate.district || "район не указан"}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {selectedCandidate && (
-          <div className="mt-5 rounded-2xl bg-white p-4">
-            <div className="font-semibold text-slate-950">
-              {getCandidateName(selectedCandidate)}
-            </div>
-
-            <div className="mt-1 text-sm text-slate-500">
-              {selectedCandidate.city || "Актау"},{" "}
-              {selectedCandidate.district || "район не указан"}
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              {parseSkills(selectedCandidate.skills)
-                .slice(0, 4)
-                .map((skill) => (
-                  <span
-                    key={skill}
-                    className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600"
-                  >
-                    {skill}
-                  </span>
-                ))}
-            </div>
+        <div className="mt-4 space-y-3 text-sm text-slate-600">
+          <div>{getCandidateName(candidateProfile)}</div>
+          <div className="flex items-center gap-1">
+            <MapPin className="h-4 w-4" />
+            {candidateProfile.city || "Актау"},{" "}
+            {candidateProfile.district || "район не указан"}
           </div>
-        )}
+          <div>{getPreferredType(candidateProfile)}</div>
+        </div>
 
-        <button
-          onClick={onGenerate}
-          disabled={loading}
-          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+        <div className="mt-5 flex flex-wrap gap-2">
+          {parseSkills(candidateProfile.skills)
+            .slice(0, 6)
+            .map((skill) => (
+              <span
+                key={skill}
+                className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600"
+              >
+                {skill}
+              </span>
+            ))}
+        </div>
+
+        <Link
+          href="/candidate"
+          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
         >
-          {loading ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Подбираем...
-            </>
-          ) : (
-            <>
-              <Sparkles className="h-4 w-4" />
-              Подобрать вакансии
-            </>
-          )}
-        </button>
+          Изменить профиль
+        </Link>
       </aside>
 
-      <div className="space-y-6">
-        {matches.length > 0 && topJobsForMap.length > 0 && (
-          <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-slate-950">
-                  Лучшие вакансии на карте
-                </h3>
+      <div>
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold tracking-tight text-slate-950">
+            Подходящие вакансии
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Найдено вариантов: {matches.length}
+          </p>
+        </div>
 
-                <p className="mt-1 text-sm text-slate-500">
-                  Локация — один из факторов подбора.
-                </p>
-              </div>
-
-              <MapPin className="h-5 w-5 text-blue-600" />
-            </div>
-
-            <JobMap jobs={topJobsForMap} height="340px" />
-          </div>
-        )}
-
-        {matches.length === 0 ? (
-          <EmptyState
-            title="Пока нет результатов"
-            text="Выберите профиль и нажмите кнопку подбора, чтобы увидеть лучшие вакансии."
-          />
-        ) : (
-          matches.map((match, index) => (
-            <JobMatchCard
-              key={match.job.id || index}
-              match={match}
-              index={index}
-            />
-          ))
-        )}
+        <div className="grid gap-5">
+          {matches.map((match) => (
+            <JobMatchCard key={match.job.id} match={match} />
+          ))}
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
-function EmployerMatchSection({
-  employers,
-  employerJobs,
-  selectedEmployerId,
-  selectedJobId,
-  setSelectedEmployerId,
-  setSelectedJobId,
+function EmployerSection({
+  jobs,
   selectedJob,
+  selectedJobId,
+  setSelectedJobId,
   matches,
-  loading,
-  onGenerate,
 }: {
-  employers: Employer[];
-  employerJobs: Job[];
-  selectedEmployerId: string;
-  selectedJobId: string;
-  setSelectedEmployerId: (value: string) => void;
-  setSelectedJobId: (value: string) => void;
+  jobs: Job[];
   selectedJob?: Job;
+  selectedJobId: string;
+  setSelectedJobId: (value: string) => void;
   matches: CandidateMatch[];
-  loading: boolean;
-  onGenerate: () => void;
 }) {
+  if (!jobs.length) {
+    return (
+      <section className="mx-auto max-w-7xl px-6 py-10 lg:px-8">
+        <div className="rounded-[2rem] border border-slate-200 bg-white p-10 text-center shadow-sm">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+            <BriefcaseBusiness className="h-6 w-6" />
+          </div>
+
+          <h2 className="mt-6 text-2xl font-bold text-slate-950">
+            Сначала создайте вакансию
+          </h2>
+
+          <p className="mx-auto mt-3 max-w-xl text-base leading-7 text-slate-600">
+            После публикации вакансии система сможет подобрать подходящих
+            кандидатов по навыкам, району, опыту и типу работы.
+          </p>
+
+          <Link
+            href="/employer"
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+          >
+            Создать вакансию
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <div className="grid gap-8 lg:grid-cols-[340px_1fr]">
-      <aside className="h-fit rounded-[1.5rem] border border-slate-200 bg-slate-50 p-6">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white">
+    <section className="mx-auto grid max-w-7xl gap-8 px-6 py-10 lg:grid-cols-[360px_1fr] lg:px-8">
+      <aside className="h-fit rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-24">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white">
           <Building2 className="h-5 w-5" />
         </div>
 
-        <h2 className="mt-5 text-2xl font-bold tracking-tight text-slate-950">
-          Подбор кандидатов
+        <h2 className="mt-5 text-2xl font-bold text-slate-950">
+          Ваша вакансия
         </h2>
 
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          Выберите компанию и вакансию, чтобы найти подходящих кандидатов.
-        </p>
-
-        <label className="mt-6 block">
-          <span className="text-sm font-medium text-slate-700">Компания</span>
-
-          <select
-            value={selectedEmployerId}
-            onChange={(e) => setSelectedEmployerId(e.target.value)}
-            className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300"
-          >
-            {employers.map((employer) => (
-              <option key={employer.id} value={employer.id}>
-                {employer.companyName}
-              </option>
-            ))}
-          </select>
-        </label>
-
         <label className="mt-5 block">
-          <span className="text-sm font-medium text-slate-700">Вакансия</span>
-
+          <span className="text-sm font-medium text-slate-700">
+            Выберите вакансию
+          </span>
           <select
-            value={selectedJobId}
-            onChange={(e) => setSelectedJobId(e.target.value)}
-            className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300"
+            value={selectedJobId || selectedJob?.id || ""}
+            onChange={(event) => setSelectedJobId(event.target.value)}
+            className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-300"
           >
-            {employerJobs.map((job) => (
+            {jobs.map((job) => (
               <option key={job.id} value={job.id}>
                 {job.title}
               </option>
@@ -942,203 +842,185 @@ function EmployerMatchSection({
         </label>
 
         {selectedJob && (
-          <div className="mt-5 rounded-2xl bg-white p-4">
+          <div className="mt-5 rounded-2xl bg-slate-50 p-4">
             <div className="font-semibold text-slate-950">
               {selectedJob.title}
             </div>
-
-            <div className="mt-1 text-sm text-slate-500">
-              {selectedJob.city}, {selectedJob.district}
+            <div className="mt-2 text-sm text-slate-500">
+              {selectedJob.city || "Актау"}, {selectedJob.district}
             </div>
-
-            <div className="mt-3 text-sm font-semibold text-slate-900">
+            <div className="mt-2 text-sm font-semibold text-slate-950">
               {formatSalary(selectedJob.salaryMin, selectedJob.salaryMax)}
             </div>
           </div>
         )}
 
-        <button
-          onClick={onGenerate}
-          disabled={loading}
-          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+        <Link
+          href="/employer"
+          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
         >
-          {loading ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Ищем...
-            </>
-          ) : (
-            <>
-              <Search className="h-4 w-4" />
-              Найти кандидатов
-            </>
-          )}
-        </button>
+          Управлять вакансиями
+        </Link>
       </aside>
 
-      <div className="space-y-6">
-        {matches.length === 0 ? (
-          <EmptyState
-            title="Кандидаты ещё не выбраны"
-            text="Выберите вакансию и запустите подбор, чтобы увидеть рейтинг кандидатов."
-          />
-        ) : (
-          matches.map((match, index) => (
-            <CandidateMatchCard
-              key={match.candidate.id || index}
-              match={match}
-              index={index}
-            />
-          ))
-        )}
+      <div>
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold tracking-tight text-slate-950">
+            Подходящие кандидаты
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Найдено кандидатов: {matches.length}
+          </p>
+        </div>
+
+        <div className="grid gap-5">
+          {matches.map((match) => (
+            <CandidateMatchCard key={match.candidate.id} match={match} />
+          ))}
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
-function JobMatchCard({ match, index }: { match: JobMatch; index: number }) {
+function JobMatchCard({ match }: { match: JobMatch }) {
   const job = match.job;
 
   return (
-    <article className="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm">
+    <article className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-blue-600">
-            #{index + 1} подходящая вакансия
-          </div>
+        <div>
+          <ScoreBadge score={match.score} />
 
-          <h3 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
+          <h3 className="mt-4 text-2xl font-bold tracking-tight text-slate-950">
             {job.title}
           </h3>
 
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500">
-            <span className="font-medium text-slate-700">
-              {getCompanyName(job)}
-            </span>
-
+            <span>{getEmployerName(job)}</span>
             <span className="inline-flex items-center gap-1">
               <MapPin className="h-4 w-4" />
-              {job.city}, {job.district}
+              {job.city || "Актау"}, {job.district || "район не указан"}
             </span>
-
-            <span>{formatSalary(job.salaryMin, job.salaryMax)}</span>
           </div>
 
-          <p className="mt-4 max-w-3xl text-base leading-7 text-slate-600">
-            {match.explanation ||
-              "Вакансия подходит по нескольким критериям: навыки, район, формат работы и ожидания по зарплате."}
+          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
+            {job.description}
           </p>
+
+          <div className="mt-5 grid gap-2 sm:grid-cols-2">
+            {match.reasons.map((reason) => (
+              <div
+                key={reason}
+                className="flex gap-2 rounded-2xl bg-slate-50 p-3 text-sm text-slate-600"
+              >
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                {reason}
+              </div>
+            ))}
+          </div>
         </div>
 
-        <ScoreBadge score={Math.round(match.score)} />
-      </div>
+        <div className="shrink-0 lg:w-56">
+          <div className="rounded-2xl bg-slate-50 p-4 text-right">
+            <div className="text-lg font-bold text-slate-950">
+              {formatSalary(job.salaryMin, job.salaryMax)}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              {employmentLabels[job.employmentType || ""] || job.employmentType}
+            </div>
+          </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <ReasonsList
-          title="Почему подходит"
-          items={match.reasons}
-          type="good"
-        />
-
-        <ReasonsList
-          title="Что стоит проверить"
-          items={match.weakPoints}
-          type="weak"
-        />
-      </div>
-
-      <div className="mt-6">
-        <BreakdownBars breakdown={match.breakdown} />
-      </div>
-
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-        <Link
-          href="/jobs"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white"
-        >
-          Перейти к вакансиям
-          <ArrowRight className="h-4 w-4" />
-        </Link>
+          <Link
+            href="/jobs"
+            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+          >
+            Открыть вакансии
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
       </div>
     </article>
   );
 }
 
-function CandidateMatchCard({
-  match,
-  index,
-}: {
-  match: CandidateMatch;
-  index: number;
-}) {
+function CandidateMatchCard({ match }: { match: CandidateMatch }) {
   const candidate = match.candidate;
-  const skills = parseSkills(candidate.skills).slice(0, 5);
 
   return (
-    <article className="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm">
+    <article className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
         <div>
-          <div className="text-sm font-semibold text-blue-600">
-            #{index + 1} подходящий кандидат
-          </div>
+          <ScoreBadge score={match.score} />
 
-          <h3 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
+          <h3 className="mt-4 text-2xl font-bold tracking-tight text-slate-950">
             {getCandidateName(candidate)}
           </h3>
 
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500">
-            <span>
-              {candidate.user?.phone ||
-                candidate.user?.email ||
-                "Контакт не указан"}
-            </span>
-
             <span className="inline-flex items-center gap-1">
               <MapPin className="h-4 w-4" />
               {candidate.city || "Актау"},{" "}
               {candidate.district || "район не указан"}
             </span>
-
             <span>{getPreferredType(candidate)}</span>
           </div>
 
-          <p className="mt-4 max-w-3xl text-base leading-7 text-slate-600">
-            {match.explanation ||
-              "Кандидат подходит по нескольким критериям: навыки, район, опыт и формат работы."}
+          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
+            {candidate.bio ||
+              "Кандидат открыт к предложениям и готов обсудить условия работы."}
           </p>
 
-          <div className="mt-5 flex flex-wrap gap-2">
-            {skills.map((skill) => (
-              <span
-                key={skill}
-                className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600"
+          <div className="mt-5 grid gap-2 sm:grid-cols-2">
+            {match.reasons.map((reason) => (
+              <div
+                key={reason}
+                className="flex gap-2 rounded-2xl bg-slate-50 p-3 text-sm text-slate-600"
               >
-                {skill}
-              </span>
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                {reason}
+              </div>
             ))}
           </div>
         </div>
 
-        <ScoreBadge score={Math.round(match.score)} />
-      </div>
+        <div className="shrink-0 lg:w-56">
+          <div className="rounded-2xl bg-slate-50 p-4 text-right">
+            <div className="text-sm text-slate-500">Контакты</div>
+            <div className="mt-1 text-sm font-semibold text-slate-950">
+              {candidate.user?.phone || candidate.user?.email || "Не указано"}
+            </div>
+          </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <ReasonsList
-          title="Почему подходит"
-          items={match.reasons}
-          type="good"
-        />
-
-        <ReasonsList
-          title="Что стоит проверить"
-          items={match.weakPoints}
-          type="weak"
-        />
-      </div>
-
-      <div className="mt-6">
-        <BreakdownBars breakdown={match.breakdown} />
+          <Link
+            href="/workers"
+            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+          >
+            Открыть работников
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
       </div>
     </article>
+  );
+}
+
+function ScoreBadge({ score }: { score: number }) {
+  const label = score >= 75 ? "Высокое совпадение" : score >= 50 ? "Среднее совпадение" : "Частичное совпадение";
+
+  return (
+    <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
+      <Target className="h-4 w-4" />
+      {score}% · {label}
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center">
+      <div className="text-2xl font-bold text-slate-950">{value}</div>
+      <div className="mt-1 text-xs font-medium text-slate-500">{label}</div>
+    </div>
   );
 }
